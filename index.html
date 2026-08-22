@@ -1,0 +1,2050 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IA Propiedades — Editor de fichas</title>
+<!-- autodeploy-ok: publicado via GitHub->Netlify -->
+
+<style>
+  :root{
+    --navy:#1B2A3F; --blue:#2E4A6B; --gray:#8DA4BE; --white:#F0F3F6;
+    --ok:#2E7D32; --err:#C62828;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+    background:var(--white); color:var(--navy); font-size:14px;
+  }
+  /* Los campos que se escriben (inputs/selects/textareas) y los botones se
+     mantienen en 16px por comodidad, aunque el resto de la interfaz (labels,
+     titulos, texto de checkboxes) haya bajado a 14px para que entre mas
+     contenido en pantalla. */
+  button, input, select, textarea{ font-family:inherit; font-size:16px; }
+  .radio-card{ font-size:16px; }
+  h1,h2,h3{ margin:0; }
+  .hidden{ display:none !important; }
+
+  /* Header */
+  .app-header{
+    background:var(--navy); color:var(--white);
+    padding:10px 18px; display:flex; align-items:center; justify-content:space-between;
+    flex-wrap:wrap; gap:10px; position:sticky; top:0; z-index:50;
+  }
+  .app-logo{ font-size:14px; letter-spacing:.18em; font-weight:700; }
+  .app-logo span{ color:var(--gray); font-weight:400; letter-spacing:.08em; }
+  .app-actions{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .app-actions button{
+    min-height:44px; padding:0 14px; border-radius:8px; border:1px solid var(--gray);
+    background:var(--blue); color:var(--white); cursor:pointer; font-weight:500;
+  }
+  .app-actions button.secondary{ background:transparent; border:1px solid var(--gray); color:var(--white); }
+  .app-actions button:hover{ opacity:.9; }
+  .save-indicator{ font-size:13px; padding:4px 10px; border-radius:20px; font-weight:500; min-width:96px; text-align:center; }
+  .save-indicator.ok{ background:rgba(76,175,80,.15); color:#8BE28E; }
+  .save-indicator.err{ background:rgba(198,40,40,.2); color:#FF9E9E; }
+  .save-indicator.idle{ background:rgba(255,255,255,.08); color:var(--gray); }
+
+  /* Layout */
+  .layout{
+    display:grid; grid-template-columns:260px 1fr 420px; gap:0;
+    height:calc(100vh - 64px); min-height:600px;
+  }
+  .col{ overflow-y:auto; }
+  .col-list{ background:#E6ECF2; border-right:1px solid var(--gray); padding:14px; }
+  .col-form{ padding:18px 22px 60px; }
+  .col-preview{ background:#DCE4EC; border-left:1px solid var(--gray); padding:14px; display:flex; flex-direction:column; }
+
+  .btn-new{
+    width:100%; min-height:48px; background:var(--navy); color:var(--white);
+    border:none; border-radius:8px; font-weight:600; font-size:16px; cursor:pointer; margin-bottom:14px;
+  }
+  .btn-new:hover{ opacity:.92; }
+
+  .ficha-item{
+    background:var(--white); border:1px solid var(--gray); border-radius:8px;
+    padding:10px 12px; margin-bottom:8px; cursor:pointer; position:relative;
+  }
+  .ficha-item.active{ border-color:var(--navy); box-shadow:0 0 0 2px var(--navy) inset; }
+  .ficha-item .fi-title{ font-weight:600; font-size:14px; margin-bottom:2px; }
+  .ficha-item .fi-sub{ font-size:12px; color:var(--blue); }
+  .ficha-item .fi-del{
+    position:absolute; top:6px; right:6px; background:none; border:none;
+    color:var(--err); font-size:16px; cursor:pointer; padding:4px 8px;
+  }
+  .empty-list{ font-size:13px; color:var(--blue); text-align:center; padding:20px 6px; }
+
+  /* Form sections */
+  .section{
+    background:var(--white); border:1px solid var(--gray); border-radius:10px;
+    margin-bottom:14px; overflow:hidden;
+  }
+  .section-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 16px; cursor:pointer; user-select:none;
+  }
+  .section-head h2{ font-size:14px; font-weight:600; }
+  .section-head .chevron{ font-size:14px; color:var(--blue); transition:transform .15s; }
+  .section.collapsed .chevron{ transform:rotate(-90deg); }
+  .section-body{ padding:0 16px 16px; }
+  .section.collapsed .section-body{ display:none; }
+  .section-hint{ font-size:13px; color:var(--blue); margin-bottom:12px; line-height:1.4; }
+
+  .field{ margin-bottom:14px; }
+  .field label{ display:block; font-size:13px; font-weight:600; color:var(--blue); margin-bottom:6px; }
+  .field .tip{ font-weight:400; color:var(--gray); cursor:help; margin-left:4px; }
+  .field input[type=text], .field input[type=number], .field select, .field textarea{
+    width:100%; min-height:44px; padding:8px 12px; border:1px solid var(--gray);
+    border-radius:8px; background:#fff; color:var(--navy);
+  }
+  .field textarea{ min-height:88px; resize:vertical; }
+  .row2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .row3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+
+  .radio-group{ display:flex; gap:10px; flex-wrap:wrap; }
+  .radio-card{
+    flex:1; min-width:130px; border:2px solid var(--gray); border-radius:10px;
+    padding:14px 10px; text-align:center; cursor:pointer; font-weight:600; min-height:44px;
+  }
+  .radio-card.selected{ border-color:var(--navy); background:#EEF2F6; }
+  .radio-card input{ display:none; }
+
+  .check-row{ display:flex; align-items:center; gap:10px; min-height:44px; }
+  .check-row input[type=checkbox]{ width:22px; height:22px; flex-shrink:0; }
+  .check-row label{ font-weight:500; color:var(--navy); }
+  .check-row svg{ width:22px; height:22px; stroke:var(--blue); flex-shrink:0; }
+
+  .icon-field{ display:flex; align-items:center; gap:10px; }
+  .icon-field svg{ width:22px; height:22px; stroke:var(--blue); flex-shrink:0; }
+
+  .dyn-row{ display:flex; gap:8px; margin-bottom:8px; align-items:center; }
+  .dyn-row input{ flex:1; }
+  .btn-x{
+    width:40px; height:40px; border-radius:8px; border:1px solid var(--err); background:#fff;
+    color:var(--err); font-size:16px; cursor:pointer; flex-shrink:0;
+  }
+  .btn-add{
+    min-height:44px; padding:0 16px; border-radius:8px; border:1px dashed var(--blue);
+    background:#fff; color:var(--blue); cursor:pointer; font-weight:600; margin-top:4px;
+  }
+
+  .amenities-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; margin-top:8px; }
+
+  .detalle-group{ margin-bottom:18px; }
+  .detalle-group:last-child{ margin-bottom:0; }
+  .detalle-group-head{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .detalle-group-head svg{ width:20px; height:20px; stroke:var(--navy); flex-shrink:0; }
+  .detalle-group-head h3{ font-size:14px; font-weight:600; color:var(--navy); }
+  .detalle-num-input{ width:64px; min-height:44px; flex-shrink:0; padding:4px 8px; border:1px solid var(--gray); border-radius:6px; background:#fff; color:var(--navy); text-align:center; font-size:16px; }
+
+  .map-preview iframe{ width:100%; height:200px; border:0; border-radius:8px; border:1px solid var(--gray); }
+  .map-geocode-status{ font-size:13px; margin:8px 0; min-height:18px; color:var(--blue); font-weight:600; }
+  .map-geocode-status.ok{ color:var(--ok); }
+  .map-geocode-status.err{ color:var(--err); }
+  .map-geocode-status.busy{ color:var(--blue); }
+
+  /* Photos */
+  .photo-toggle{ display:flex; gap:8px; margin-bottom:12px; }
+  .photo-toggle button{
+    flex:1; min-height:44px; border-radius:8px; border:1px solid var(--gray); background:#fff;
+    color:var(--navy); cursor:pointer; font-weight:600;
+  }
+  .photo-toggle button.active{ background:var(--navy); color:var(--white); border-color:var(--navy); }
+  .photo-count{ font-size:13px; color:var(--blue); margin-bottom:8px; font-weight:600; }
+  .photo-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .photo-thumb{
+    position:relative; border:2px solid var(--gray); border-radius:8px; overflow:hidden;
+    aspect-ratio:4/3; cursor:grab; background:#dde5ec;
+  }
+  .photo-thumb.main{ border-color:var(--navy); box-shadow:0 0 0 2px var(--navy); }
+  .photo-thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .photo-thumb .pt-actions{
+    position:absolute; inset:auto 0 0 0; display:flex; gap:4px; padding:4px;
+    background:rgba(27,42,63,.75);
+  }
+  .photo-thumb .pt-actions button{
+    flex:1; font-size:11px; padding:4px; border:none; border-radius:4px; cursor:pointer;
+  }
+  .photo-thumb .pt-main{ background:#fff; color:var(--navy); }
+  .photo-thumb .pt-del{ background:var(--err); color:#fff; }
+  .photo-thumb .pt-badge{
+    position:absolute; top:4px; left:4px; background:var(--navy); color:#fff; font-size:10px;
+    padding:2px 6px; border-radius:10px;
+  }
+
+  /* Preview column */
+  .preview-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .preview-head h2{ font-size:14px; color:var(--blue); text-transform:uppercase; letter-spacing:.08em; }
+  .preview-frame-wrap{ flex:1; background:#fff; border-radius:12px; overflow:hidden; border:1px solid var(--gray); }
+  .preview-frame-wrap iframe{ width:100%; height:100%; border:0; }
+
+  /* Mobile tabs */
+  .mobile-tabs{ display:none; }
+  @media (max-width: 980px){
+    .app-actions .app-actions-text{ display:none; }
+    .layout{ display:block; height:auto; }
+    .col{ display:none; height:auto; }
+    .col.active-tab{ display:block; }
+    .col-preview{ min-height:70vh; }
+    .mobile-tabs{
+      display:flex; position:sticky; top:56px; z-index:40; background:var(--navy);
+    }
+    .mobile-tabs button{
+      flex:1; min-height:44px; background:none; border:none; color:var(--gray);
+      font-weight:600; border-bottom:3px solid transparent; cursor:pointer;
+    }
+    .mobile-tabs button.active{ color:#fff; border-bottom-color:var(--white); }
+  }
+
+  /* Toast / confirm modal */
+  .modal-backdrop{
+    display:none; position:fixed; inset:0; background:rgba(27,42,63,.6); z-index:200;
+    align-items:center; justify-content:center; padding:20px;
+  }
+  .modal-backdrop.active{ display:flex; }
+  .modal-box{ background:#fff; border-radius:12px; padding:22px; max-width:400px; width:100%; }
+  .modal-box p{ margin-bottom:18px; color:var(--blue); font-size:15px; }
+  .modal-box .modal-actions{ display:flex; gap:10px; justify-content:flex-end; }
+  .modal-box button{ min-height:44px; padding:0 18px; border-radius:8px; cursor:pointer; font-weight:600; border:1px solid var(--gray); background:#fff; }
+  .modal-box button.danger{ background:var(--err); color:#fff; border-color:var(--err); }
+  .modal-box button.confirm{ background:var(--navy); color:#fff; border-color:var(--navy); }
+</style>
+</head>
+<body>
+
+<div class="app-header">
+  <div class="app-logo">IA <span>PROPIEDADES</span> · Editor de fichas</div>
+  <div class="app-actions">
+    <span id="saveIndicator" class="save-indicator idle">Sin cambios</span>
+    <button id="btnGuardar" type="button">Guardar</button>
+    <button id="btnDescargar" type="button" title="Descarga la ficha en un .zip con el nombre de la propiedad. Se arrastra directo a Netlify (lo abre solo) — sin renombrar nada.">Descargar ficha (.zip)</button>
+    <button id="btnExportar" type="button" class="secondary">Exportar backup</button>
+    <button id="btnImportar" type="button" class="secondary">Importar backup</button>
+    <input type="file" id="inputImportar" accept="application/json" class="hidden">
+  </div>
+</div>
+
+<div class="mobile-tabs">
+  <button data-tab="list" class="tab-btn active">Fichas</button>
+  <button data-tab="form" class="tab-btn">Editar</button>
+  <button data-tab="preview" class="tab-btn">Preview</button>
+</div>
+
+<div class="layout">
+  <div class="col col-list active-tab" data-col="list">
+    <button class="btn-new" id="btnNueva" type="button">+ Nueva ficha</button>
+    <div id="listaFichas"></div>
+  </div>
+
+  <div class="col col-form" data-col="form"></div>
+
+  <div class="col col-preview" data-col="preview">
+    <div class="preview-head"><h2>Preview en vivo</h2></div>
+    <div class="preview-frame-wrap">
+      <iframe id="previewFrame" title="Preview ficha"></iframe>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal-box">
+    <p id="modalText"></p>
+    <div class="modal-actions">
+      <button id="modalCancel" type="button">Cancelar</button>
+      <button id="modalOk" type="button" class="confirm">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ======================= STATE & STORAGE ======================= */
+// Las fichas (con fotos) se guardan en IndexedDB, que aguanta cientos de MB
+// (localStorage solo ~5MB, se llenaba con pocas fotos). Las claves chicas
+// (currentId, contador de código, fecha de autobackup) siguen en localStorage.
+const STORAGE_KEY = 'ia_fichas_v1';       // clave vieja de localStorage (para migrar)
+const LAST_ID_KEY = 'ia_fichas_last_id';
+const CODIGO_COUNTER_KEY = 'ia_fichas_codigo_counter';
+const IDB_NAME = 'ia_fichas_db';
+const IDB_STORE = 'kv';
+const IDB_FICHAS_KEY = 'fichas';
+
+let _idbPromise = null;
+function idbOpen(){
+  if(_idbPromise) return _idbPromise;
+  _idbPromise = new Promise((resolve, reject)=>{
+    if(!window.indexedDB){ reject(new Error('no-indexeddb')); return; }
+    let req;
+    try{ req = indexedDB.open(IDB_NAME, 1); }
+    catch(e){ reject(e); return; }
+    req.onupgradeneeded = ()=>{ try{ req.result.createObjectStore(IDB_STORE); }catch(e){} };
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error || new Error('idb-open'));
+  });
+  return _idbPromise;
+}
+function idbGet(key){
+  return idbOpen().then(db=> new Promise((resolve, reject)=>{
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error);
+  }));
+}
+function idbSet(key, value){
+  return idbOpen().then(db=> new Promise((resolve, reject)=>{
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = ()=> resolve();
+    tx.onerror = ()=> reject(tx.error);
+  }));
+}
+
+// Guarda el array de fichas. Preferencia: IndexedDB (gran capacidad). Si no está
+// disponible por algún motivo, cae a localStorage para no romper (con su límite).
+async function guardarFichasStorage(){
+  try{
+    await idbSet(IDB_FICHAS_KEY, fichas);
+    try{ localStorage.removeItem(STORAGE_KEY); }catch(e){} // ya migrado, liberar
+    return;
+  }catch(e){
+    // Fallback (puede fallar por tamaño con muchas fotos)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(fichas));
+  }
+}
+
+// Carga las fichas. Lee de IndexedDB; si está vacío pero hay datos viejos en
+// localStorage, los migra a IndexedDB una vez.
+async function cargarFichasStorage(){
+  try{
+    const data = await idbGet(IDB_FICHAS_KEY);
+    if(Array.isArray(data)) return data;
+  }catch(e){}
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      const arr = JSON.parse(raw);
+      if(Array.isArray(arr)){
+        try{ await idbSet(IDB_FICHAS_KEY, arr); localStorage.removeItem(STORAGE_KEY); }catch(e){}
+        return arr;
+      }
+    }
+  }catch(e){}
+  return [];
+}
+
+// Código automático correlativo por ficha (IA-0001, IA-0002...). El contador
+// vive en localStorage de esta compu. Se puede editar a mano en el formulario
+// si se quiere usar el código del propio sistema de la inmobiliaria.
+function nextCodigo(){
+  let n = parseInt(localStorage.getItem(CODIGO_COUNTER_KEY) || '0', 10);
+  if(isNaN(n)) n = 0;
+  n += 1;
+  try{ localStorage.setItem(CODIGO_COUNTER_KEY, String(n)); }catch(e){}
+  return 'IA-' + String(n).padStart(4, '0');
+}
+
+const BARRIOS = ["Aires Puros","Brazo Oriental","Colón","Ituzaingó","La Blanqueada",
+  "Malvín Norte","Pocitos","Unión","Cordón","Centro","Punta Carretas","Buceo",
+  "Malvín","Prado","Parque Batlle"];
+
+const AMENITIES_COMUNES = ["Piscina exterior","Piscina climatizada","Gimnasio",
+  "Portería 24hs","Salón de fiestas","Barbacoa","Parrilleros","Sauna","Solárium",
+  "Playroom","Sala de juegos","Coworking","Jardines","Bicicletero",
+  "Piscina al aire libre","Piscina cubierta","Canchas deportivas","Salón comunal",
+  "Calefacción","Aire acondicionado","Lavandería"];
+
+// Garantías de alquiler aceptadas (solo se muestran cuando la operación es
+// "Alquiler"). Lista base + posibilidad de agregar otras custom por ficha.
+const GARANTIAS_COMUNES = ["Porto Seguro","Depósito","Sura","Sancor",
+  "CGN (Contaduría General de la Nación)","ANDA","MAPFRE"];
+
+// Datos de LOCAL comercial (solo se muestran cuando tipoPropiedad === 'local').
+// Aplica tanto a venta como a alquiler.
+const CONSERVACION_OPCIONES = ["Excelente","Muy bueno","Bueno","Reparaciones simples","A reciclar"];
+const TECHO_OPCIONES = ["De material","Liviano","Mixto"];
+
+function initLocal(){
+  return {
+    supEdificada:'', supTerreno:'', supSalon:'', alturaSalon:'', frente:'',
+    conservacion:'', techo:'', plantas:'',
+    salones:'', oficinas:'', entradaVehiculos:'', aptoProfesional:'',
+    gastosComunes:'',
+    vidriera:false, sobreAvenida:false, accesibilidad:false
+  };
+}
+
+function ensureLocal(f){
+  const def = initLocal();
+  if(!f.local || typeof f.local !== 'object' || Array.isArray(f.local)) f.local = {};
+  Object.keys(def).forEach(k=>{ if(f.local[k] === undefined) f.local[k] = def[k]; });
+}
+
+let fichas = [];
+let currentId = null;
+let dirty = false;
+let dragPhotoIndex = null;
+
+/* ======================= PHOTO COMPRESSION ======================= */
+// Fotos "Subir desde PC" se re-codifican en el navegador antes de guardarlas:
+// se limita el lado mas largo a PHOTO_MAX_DIM px y se recomprime como JPEG a
+// PHOTO_QUALITY. Esto evita fichas de 30+ MB (fotos de celular sin comprimir)
+// sin que se note perdida de calidad en pantalla (el hero de la ficha final
+// nunca se muestra a mas de 640px de ancho).
+const PHOTO_MAX_DIM = 1920;
+const PHOTO_QUALITY = 0.9;
+
+function compressImageFile(file, maxDim, quality){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onerror = ()=>reject(new Error('No se pudo leer el archivo'));
+    reader.onload = ()=>{
+      const img = new Image();
+      img.onerror = ()=>reject(new Error('No se pudo decodificar la imagen'));
+      img.onload = ()=>{
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+        if(!width || !height){ reject(new Error('Imagen inválida')); return; }
+        if(width > maxDim || height > maxDim){
+          if(width >= height){ height = Math.round(height * (maxDim / width)); width = maxDim; }
+          else { width = Math.round(width * (maxDim / height)); height = maxDim; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        let dataUrl;
+        try{ dataUrl = canvas.toDataURL('image/jpeg', quality); }
+        catch(err){ reject(err); return; }
+        // Si por algún motivo la version comprimida no achica el archivo
+        // (fotos ya livianas, capturas de pantalla, etc.) se usa el original.
+        if(dataUrl.length >= reader.result.length){ resolve(reader.result); }
+        else { resolve(dataUrl); }
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function uid(){ return 'f_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8); }
+
+function nuevaFicha(){
+  return {
+    id: uid(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    operacion: 'venta',
+    garantias: [], garantiasCustom: [],
+    tipoPropiedad: 'apartamento',
+    subtipoApartamento: '', disposicion: '',
+    cantidadPisos: '', aptosPorPiso: '', porteriaHorario: '', seguridad: '',
+    gastosComunes: '',
+    local: initLocal(),
+    barrio: '', ciudad: 'Montevideo',
+    titulo: '', precio: '', moneda: 'USD',
+    dormitorios: '', banos: '', metraje: '', cochera: false, parrillero: false,
+    anioConstruccion: '', planta: '',
+    caracteristicasDetalladas: initCaracteristicasDetalladas(),
+    comentarioDestacado: '',
+    descripcion: '',
+    caracteristicas: [],
+    amenitiesEnabled: false,
+    amenities: [],
+    datosTecnicos: [],
+    codigo: nextCodigo(),
+    fotosModo: 'urls',
+    fotos: [],
+    videoUrl: '',
+    referenciaMapa: '',
+    mapLat: null, mapLng: null
+  };
+}
+
+async function loadFichas(){
+  fichas = await cargarFichasStorage();
+  fichas.forEach(ensureCaracteristicasDetalladas);
+  // Fichas viejas sin código: se les asigna uno automático y se persiste una
+  // sola vez (si no se persistiera, cambiaría en cada apertura).
+  let codigoAsignado = false;
+  fichas.forEach(f=>{
+    if(!f.codigo || !String(f.codigo).trim()){ f.codigo = nextCodigo(); codigoAsignado = true; }
+  });
+  const lastId = localStorage.getItem(LAST_ID_KEY);
+  if(fichas.length){
+    currentId = fichas.find(f=>f.id===lastId) ? lastId : fichas[0].id;
+  } else {
+    currentId = null;
+  }
+  if(codigoAsignado){
+    try{ await guardarFichasStorage(); }catch(e){}
+  }
+}
+
+function persist(){
+  if(currentId){ try{ localStorage.setItem(LAST_ID_KEY, currentId); }catch(e){} }
+  guardarFichasStorage().then(()=>{
+    setSaveIndicator('ok');
+    maybeAutoBackup();
+  }).catch(()=>{
+    setSaveIndicator('err');
+  });
+}
+
+function setSaveIndicator(state){
+  const el = document.getElementById('saveIndicator');
+  el.classList.remove('ok','err','idle');
+  if(state==='ok'){ el.classList.add('ok'); el.textContent = 'Guardado ✓'; }
+  else if(state==='err'){ el.classList.add('err'); el.textContent = 'Error al guardar'; }
+  else { el.classList.add('idle'); el.textContent = 'Sin cambios'; }
+}
+
+function getCurrent(){ return fichas.find(f=>f.id===currentId) || null; }
+
+function markDirty(){ dirty = true; setSaveIndicator('idle'); }
+
+/* ======================= ICONS ======================= */
+const ICON = {
+  bed: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20v-8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v8"/><path d="M4 10V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4"/><path d="M2 20h20"/></svg>',
+  bath: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6 6.5 3.5a1.5 1.5 0 0 0-1-.5C4.683 3 4 3.683 4 4.5V17a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M2 12h20"/></svg>',
+  ruler: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.4 2.4 0 0 1 0-3.4l2.6-2.6a2.4 2.4 0 0 1 3.4 0Z"/></svg>',
+  car: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17h14M5 17a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm14 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM3 17V11l2-5h14l2 5v6"/></svg>',
+  fire: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2c1 4-4 5-4 10a4 4 0 0 0 8 0c0-2-1-3-1-3s2 1 2 4a6 6 0 0 1-12 0C5 8 9 7 12 2Z"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>',
+  sofa: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18v-2a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2 2 2 0 0 1 2-2h12a2 2 0 0 1 2 2 2 2 0 0 1 2 2v2a2 2 0 0 1-2 2v2"/><path d="M4 14h16"/><path d="M6 18v2M18 18v2"/></svg>',
+  tree: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 7 9h2.5L6 15h3l-3 6h12l-3-6h3l-3.5-6H17Z"/><path d="M12 21v-2"/></svg>',
+  building: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M12 6h.01M16 6h.01M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01"/></svg>'
+};
+
+/* ======================= CARACTERISTICAS DETALLADAS (checkboxes agrupados) ======================= */
+const DETALLE_GROUPS = [
+  { key:'detalles', label:'Detalles', icon:'eye', items:[
+    { key:'vista_mar', label:'Vista al mar' }
+  ]},
+  { key:'dormitorios', label:'Dormitorios', icon:'bed', items:[
+    { key:'en_suite', label:'En suite', type:'number' },
+    { key:'con_placard', label:'Con placard', type:'number' },
+    { key:'dormitorio_servicio', label:'Dormitorio de servicio' },
+    { key:'vestidor', label:'Vestidor' }
+  ]},
+  { key:'banos', label:'Baños', icon:'bath', items:[
+    { key:'bano_servicio', label:'Baño de servicio' },
+    { key:'jacuzzi', label:'Jacuzzi' }
+  ]},
+  { key:'interior', label:'Interior', icon:'sofa', items:[
+    { key:'living', label:'Living' },
+    { key:'living_comedor', label:'Living-comedor' },
+    { key:'comedor', label:'Comedor' },
+    { key:'estar', label:'Estar' },
+    { key:'escritorio', label:'Escritorio' },
+    { key:'kitchenette', label:'Kitchenette' },
+    { key:'cocina', label:'Cocina' },
+    { key:'con_office', label:'Oficina' },
+    { key:'desayunador', label:'Desayunador' },
+    { key:'cuarto_juegos', label:'Cuarto de Juegos' }
+  ]},
+  { key:'exterior', label:'Exterior', icon:'tree', items:[
+    { key:'deposito', label:'Depósito' },
+    { key:'lavadero', label:'Lavadero' },
+    { key:'balcon', label:'Balcón' },
+    { key:'terraza_principal', label:'Terraza Principal' },
+    { key:'terraza_servicio', label:'Terraza Servicio' },
+    { key:'acceso_azotea', label:'Acceso a azotea' },
+    { key:'patio', label:'Patio' },
+    { key:'fondo', label:'Fondo' },
+    { key:'jardin', label:'Jardín' },
+    { key:'barbacoa', label:'Barbacoa' }
+  ]}
+];
+
+function detalleItemType(it){ return it.type === 'number' ? 'number' : 'checkbox'; }
+function detalleItemDefault(it){ return detalleItemType(it)==='number' ? 0 : false; }
+
+function initCaracteristicasDetalladas(){
+  const obj = {};
+  DETALLE_GROUPS.forEach(g=>{
+    obj[g.key] = {};
+    g.items.forEach(it=>{ obj[g.key][it.key] = detalleItemDefault(it); });
+  });
+  return obj;
+}
+
+function ensureCaracteristicasDetalladas(f){
+  if(typeof f.videoUrl !== 'string') f.videoUrl = '';
+  if(typeof f.referenciaMapa !== 'string') f.referenciaMapa = '';
+  if(!Array.isArray(f.garantias)) f.garantias = [];
+  if(!Array.isArray(f.garantiasCustom)) f.garantiasCustom = [];
+  if(f.tipoPropiedad!=='casa' && f.tipoPropiedad!=='apartamento' && f.tipoPropiedad!=='local') f.tipoPropiedad = 'apartamento';
+  ensureLocal(f);
+  if(typeof f.subtipoApartamento !== 'string') f.subtipoApartamento = '';
+  if(typeof f.disposicion !== 'string') f.disposicion = '';
+  if(typeof f.cantidadPisos !== 'string' && typeof f.cantidadPisos !== 'number') f.cantidadPisos = '';
+  if(typeof f.aptosPorPiso !== 'string' && typeof f.aptosPorPiso !== 'number') f.aptosPorPiso = '';
+  if(typeof f.porteriaHorario !== 'string') f.porteriaHorario = '';
+  if(typeof f.seguridad !== 'string') f.seguridad = '';
+  if(typeof f.gastosComunes !== 'string') f.gastosComunes = '';
+  if(typeof f.mapLat !== 'number') f.mapLat = null;
+  if(typeof f.mapLng !== 'number') f.mapLng = null;
+  if(!f.caracteristicasDetalladas) f.caracteristicasDetalladas = initCaracteristicasDetalladas();
+  DETALLE_GROUPS.forEach(g=>{
+    if(!f.caracteristicasDetalladas[g.key]) f.caracteristicasDetalladas[g.key] = {};
+    g.items.forEach(it=>{
+      const cur = f.caracteristicasDetalladas[g.key][it.key];
+      if(detalleItemType(it)==='number'){
+        if(typeof cur === 'boolean'){ f.caracteristicasDetalladas[g.key][it.key] = cur ? 1 : 0; }
+        else if(typeof cur !== 'number' || isNaN(cur)){ f.caracteristicasDetalladas[g.key][it.key] = 0; }
+      } else {
+        if(typeof cur !== 'boolean'){ f.caracteristicasDetalladas[g.key][it.key] = !!cur; }
+      }
+    });
+  });
+}
+
+/* ======================= FORM RENDER ======================= */
+const collapsedSections = new Set();
+
+function slugify(s){
+  return (s||'').toString().normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
+}
+
+// Si hay una referencia de cruce de calles cargada, el mapa centra ahí (zoom
+// mas cercano, 16) en vez del barrio en general (zoom 14). Nunca se usa la
+// direccion exacta — sigue siendo una aproximacion, solo mas precisa.
+function mapQueryText(f){
+  const ref = (f.referenciaMapa || '').trim();
+  return `${ref || f.barrio}, ${f.ciudad}, Uruguay`;
+}
+
+// Si ya tenemos coordenadas geocodificadas (f.mapLat/f.mapLng), el mapa se
+// centra ahi SIN pin (ll=). Si todavia no se geocodifico (o fallo), cae al
+// comportamiento anterior con pin (q=) para que el mapa nunca se rompa.
+function mapEmbedSrc(f){
+  const ref = (f.referenciaMapa || '').trim();
+  const zoom = ref ? 16 : 14;
+  if(typeof f.mapLat === 'number' && typeof f.mapLng === 'number'){
+    return `https://www.google.com/maps?ll=${f.mapLat},${f.mapLng}&z=${zoom}&t=m&output=embed`;
+  }
+  const query = encodeURIComponent(mapQueryText(f));
+  return `https://www.google.com/maps?q=${query}&z=${zoom}&output=embed`;
+}
+
+// Geocodificacion gratuita via OpenStreetMap Nominatim (sin API key). Se usa
+// UNA sola vez por ficha, al cargarla en el editor (nunca en la ficha ya
+// publicada) — uso puntual y respetuoso de su politica de uso gratuito.
+async function geocodeQuery(texto){
+  try{
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=uy&q=${encodeURIComponent(texto)}`;
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if(!res.ok) return null;
+    const data = await res.json();
+    if(!Array.isArray(data) || !data.length) return null;
+    const lat = parseFloat(data[0].lat);
+    const lng = parseFloat(data[0].lon);
+    if(isNaN(lat) || isNaN(lng)) return null;
+    return { lat, lng };
+  }catch(err){
+    return null;
+  }
+}
+
+function setMapGeocodeStatus(text, cls){
+  const el = document.getElementById('mapGeocodeStatus');
+  if(!el) return;
+  el.textContent = text;
+  el.className = 'map-geocode-status' + (cls ? ' ' + cls : '');
+}
+
+async function buscarUbicacionMapa(f){
+  const query = mapQueryText(f).trim();
+  if(!query || query === `, ${f.ciudad}, Uruguay`){
+    setMapGeocodeStatus('Cargá al menos el barrio para poder ubicar el mapa.', 'err');
+    return;
+  }
+  setMapGeocodeStatus('Buscando ubicación…', 'busy');
+  const result = await geocodeQuery(query);
+  // Si el usuario siguio escribiendo mientras esperabamos la respuesta, no
+  // pisamos con un resultado viejo — solo aplicamos si la ficha sigue activa.
+  if(getCurrent() !== f) return;
+  if(result){
+    f.mapLat = result.lat;
+    f.mapLng = result.lng;
+    setMapGeocodeStatus('Ubicación encontrada ✓', 'ok');
+  } else {
+    f.mapLat = null;
+    f.mapLng = null;
+    setMapGeocodeStatus('No se encontró esa ubicación, se muestra el mapa por barrio (con pin).', 'err');
+  }
+  onFichaChanged();
+  updateMapPreview(f);
+}
+
+function sectionWrap(key, title, bodyHtml){
+  const collapsed = collapsedSections.has(key) ? 'collapsed' : '';
+  return `<div class="section ${collapsed}" data-section-key="${key}">
+    <div class="section-head" data-toggle-section="${key}">
+      <h2>${title}</h2><span class="chevron">▾</span>
+    </div>
+    <div class="section-body">${bodyHtml}</div>
+  </div>`;
+}
+
+function tip(text){ return `<span class="tip" title="${text.replace(/"/g,'&quot;')}">(?)</span>`; }
+
+function buildFormHTML(f){
+  let html = '';
+
+  // 1. Operacion
+  html += sectionWrap('operacion','1. Operación', `
+    <div class="radio-group">
+      ${['venta','alquiler','renta'].map(v=>{
+        const labels = {venta:'Venta', alquiler:'Alquiler', renta:'Venta con Renta'};
+        const sel = f.operacion===v ? 'selected' : '';
+        return `<label class="radio-card ${sel}"><input type="radio" name="operacion" value="${v}" ${f.operacion===v?'checked':''} data-field="operacion">${labels[v]}</label>`;
+      }).join('')}
+    </div>
+    ${f.operacion==='alquiler' ? `
+      <div style="margin-top:16px;">
+        <label style="display:block;font-size:13px;font-weight:600;color:var(--blue);margin-bottom:6px;">Garantías aceptadas ${tip('Marcá las garantías que aceptás para este alquiler. Aparecen en la ficha final. Si falta alguna, agregala con "+ Agregar otra".')}</label>
+        <div class="amenities-grid">
+          ${GARANTIAS_COMUNES.concat(f.garantiasCustom||[]).map(g=>`
+            <div class="check-row">
+              <input type="checkbox" data-garantia="${escAttr(g)}" ${f.garantias.includes(g)?'checked':''} id="gar_${escAttr(slugify(g))}">
+              <label for="gar_${escAttr(slugify(g))}">${escHtml(g)}</label>
+            </div>`).join('')}
+        </div>
+        <button type="button" class="btn-add" id="btnAddGarantia">+ Agregar otra</button>
+      </div>
+    ` : ''}`);
+
+  // 2. Tipo de propiedad
+  html += sectionWrap('tipoPropiedad','2. Tipo de propiedad', `
+    <div class="radio-group">
+      ${['casa','apartamento','local'].map(v=>{
+        const labels = {casa:'Casa', apartamento:'Apartamento', local:'Local'};
+        const sel = f.tipoPropiedad===v ? 'selected' : '';
+        return `<label class="radio-card ${sel}"><input type="radio" name="tipoPropiedad" value="${v}" ${f.tipoPropiedad===v?'checked':''} data-field="tipoPropiedad">${labels[v]}</label>`;
+      }).join('')}
+    </div>
+    ${f.tipoPropiedad==='local' ? `
+      <p class="section-hint" style="font-weight:600;margin-top:16px;">Datos del local</p>
+      <div class="row2">
+        <div class="field"><label for="fLocSupEdif">Superficie edificada (m²)</label>
+          <input type="number" id="fLocSupEdif" min="0" data-local="supEdificada" value="${escAttr(f.local.supEdificada)}"></div>
+        <div class="field"><label for="fLocSupTerr">Superficie del terreno (m²)</label>
+          <input type="number" id="fLocSupTerr" min="0" data-local="supTerreno" value="${escAttr(f.local.supTerreno)}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="fLocSupSalon">Superficie salón principal (m²)</label>
+          <input type="number" id="fLocSupSalon" min="0" data-local="supSalon" value="${escAttr(f.local.supSalon)}"></div>
+        <div class="field"><label for="fLocAltura">Altura salón principal (m)</label>
+          <input type="number" id="fLocAltura" min="0" data-local="alturaSalon" value="${escAttr(f.local.alturaSalon)}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="fLocFrente">Frente (m)</label>
+          <input type="number" id="fLocFrente" min="0" data-local="frente" value="${escAttr(f.local.frente)}"></div>
+        <div class="field"><label for="fLocPlantas">Cantidad de plantas</label>
+          <input type="number" id="fLocPlantas" min="0" data-local="plantas" value="${escAttr(f.local.plantas)}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="fLocConserv">Conservación</label>
+          <select id="fLocConserv" data-local="conservacion">
+            <option value="" ${!f.local.conservacion?'selected':''}>-- Sin especificar --</option>
+            ${CONSERVACION_OPCIONES.map(o=>`<option value="${escAttr(o)}" ${f.local.conservacion===o?'selected':''}>${o}</option>`).join('')}
+          </select></div>
+        <div class="field"><label for="fLocTecho">Techo</label>
+          <select id="fLocTecho" data-local="techo">
+            <option value="" ${!f.local.techo?'selected':''}>-- Sin especificar --</option>
+            ${TECHO_OPCIONES.map(o=>`<option value="${escAttr(o)}" ${f.local.techo===o?'selected':''}>${o}</option>`).join('')}
+          </select></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="fLocSalones">Cantidad de salones</label>
+          <input type="number" id="fLocSalones" min="0" data-local="salones" value="${escAttr(f.local.salones)}"></div>
+        <div class="field"><label for="fLocOficinas">Cantidad de oficinas</label>
+          <input type="number" id="fLocOficinas" min="0" data-local="oficinas" value="${escAttr(f.local.oficinas)}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="fLocEntrada">Entrada de vehículos para (opcional) ${tip('Ej: Autos, Camiones, Camionetas')}</label>
+          <input type="text" id="fLocEntrada" placeholder="Ej: Autos" data-local="entradaVehiculos" value="${escAttr(f.local.entradaVehiculos)}"></div>
+        <div class="field"><label for="fLocApto">Apto profesional / habilitación (opcional) ${tip('Ej: Habilitación comercial vigente, apto oficinas')}</label>
+          <input type="text" id="fLocApto" placeholder="Ej: Habilitación comercial vigente" data-local="aptoProfesional" value="${escAttr(f.local.aptoProfesional)}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="fLocGastos">Gastos comunes (opcional) ${tip('Ej: $ 4.500, o "Sin gastos comunes". Útil sobre todo en alquiler.')}</label>
+          <input type="text" id="fLocGastos" placeholder="Ej: $ 4.500" data-local="gastosComunes" value="${escAttr(f.local.gastosComunes)}"></div>
+      </div>
+      <div class="row2">
+        <div class="check-row"><input type="checkbox" id="fLocVidriera" data-local="vidriera" ${f.local.vidriera?'checked':''}><label for="fLocVidriera">Vidriera / vitrina a la calle</label></div>
+        <div class="check-row"><input type="checkbox" id="fLocSobreAv" data-local="sobreAvenida" ${f.local.sobreAvenida?'checked':''}><label for="fLocSobreAv">Sobre avenida / esquina</label></div>
+      </div>
+      <div class="row2">
+        <div class="check-row"><input type="checkbox" id="fLocAccesib" data-local="accesibilidad" ${f.local.accesibilidad?'checked':''}><label for="fLocAccesib">Accesibilidad (rampa / baño adaptado)</label></div>
+      </div>
+    ` : ''}
+    ${f.tipoPropiedad==='apartamento' ? `
+      <div class="row2" style="margin-top:16px;">
+        <div class="field">
+          <label for="fSubtipo">Subtipo (opcional)</label>
+          <select id="fSubtipo" data-field="subtipoApartamento">
+            <option value="" ${!f.subtipoApartamento?'selected':''}>-- Ninguno --</option>
+            ${['Dúplex','Monoambiente','Penthouse','Loft'].map(o=>`<option value="${escAttr(o)}" ${f.subtipoApartamento===o?'selected':''}>${o}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label for="fDisposicion">Disposición (opcional)</label>
+          <select id="fDisposicion" data-field="disposicion">
+            <option value="" ${!f.disposicion?'selected':''}>-- Ninguna --</option>
+            ${['Frente','Contrafrente','Interno','Lateral'].map(o=>`<option value="${escAttr(o)}" ${f.disposicion===o?'selected':''}>${o}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="fCantidadPisos">Cantidad de pisos del edificio (opcional)</label>
+          <input type="number" id="fCantidadPisos" min="0" data-field="cantidadPisos" value="${escAttr(f.cantidadPisos)}">
+        </div>
+        <div class="field">
+          <label for="fAptosPorPiso">Apartamentos por piso (opcional)</label>
+          <input type="number" id="fAptosPorPiso" min="0" data-field="aptosPorPiso" value="${escAttr(f.aptosPorPiso)}">
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="fPorteria">Portería (horario, opcional) ${tip('Ej: 24hs, o de 8 a 20hs')}</label>
+          <input type="text" id="fPorteria" placeholder="Ej: 24hs" data-field="porteriaHorario" value="${escAttr(f.porteriaHorario)}">
+        </div>
+        <div class="field">
+          <label for="fSeguridad">Seguridad (opcional) ${tip('Ej: Cámaras, guardia nocturno')}</label>
+          <input type="text" id="fSeguridad" placeholder="Ej: Cámaras + guardia" data-field="seguridad" value="${escAttr(f.seguridad)}">
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="fGastosComunes">Gastos comunes (opcional) ${tip('Las expensas del edificio. Ej: "$ 4.500" o "Sin gastos comunes".')}</label>
+          <input type="text" id="fGastosComunes" placeholder="Ej: $ 4.500" data-field="gastosComunes" value="${escAttr(f.gastosComunes)}">
+        </div>
+      </div>
+    ` : ''}`);
+
+  // 3. Ubicacion
+  html += sectionWrap('ubicacion','3. Ubicación', `
+    <div class="row2">
+      <div class="field">
+        <label for="fBarrio">Barrio</label>
+        <input type="text" id="fBarrio" list="barriosList" data-field="barrio" value="${escAttr(f.barrio)}">
+        <datalist id="barriosList">${BARRIOS.map(b=>`<option value="${escAttr(b)}">`).join('')}</datalist>
+      </div>
+      <div class="field">
+        <label for="fCiudad">Ciudad</label>
+        <input type="text" id="fCiudad" data-field="ciudad" value="${escAttr(f.ciudad)}">
+      </div>
+    </div>`);
+
+  // 3. Titulo y precio
+  html += sectionWrap('titulo','4. Título y precio', `
+    <div class="field">
+      <label for="fTitulo">Título</label>
+      <input type="text" id="fTitulo" data-field="titulo" value="${escAttr(f.titulo)}">
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label for="fPrecio">Precio ${tip('Escribí solo el número. Podés poner el punto de miles o no — la ficha lo acomoda sola. Ej: 39990 o 39.990 → sale "$ 39.990".')}</label>
+        <input type="text" inputmode="numeric" id="fPrecio" data-field="precio" placeholder="Ej: 39990" value="${escAttr(f.precio)}">
+        <div id="precioPreview" style="font-size:13px;color:var(--blue);margin-top:6px;font-weight:600;"></div>
+      </div>
+      <div class="field">
+        <label for="fMoneda">Moneda</label>
+        <select id="fMoneda" data-field="moneda">
+          ${['USD','UYU','USD_ANV'].map(m=>{
+            const lbl = {USD:'USD', UYU:'UYU', USD_ANV:'USD + saldo ANV'}[m];
+            return `<option value="${m}" ${f.moneda===m?'selected':''}>${lbl}</option>`;
+          }).join('')}
+        </select>
+      </div>
+    </div>`);
+
+  // 4. Caracteristicas principales
+  html += sectionWrap('principales','5. Características principales', `
+    <div class="row3">
+      <div class="field"><label for="fDorm">Dormitorios</label>
+        <div class="icon-field">${ICON.bed}<input type="number" id="fDorm" min="0" data-field="dormitorios" value="${escAttr(f.dormitorios)}"></div>
+      </div>
+      <div class="field"><label for="fBanos">Baños</label>
+        <div class="icon-field">${ICON.bath}<input type="number" id="fBanos" min="0" data-field="banos" value="${escAttr(f.banos)}"></div>
+      </div>
+      <div class="field"><label for="fMetraje">Metraje m²</label>
+        <div class="icon-field">${ICON.ruler}<input type="number" id="fMetraje" min="0" data-field="metraje" value="${escAttr(f.metraje)}"></div>
+      </div>
+    </div>
+    <div class="row2">
+      <div class="check-row"><input type="checkbox" id="fCochera" data-field="cochera" ${f.cochera?'checked':''}>${ICON.car}<label for="fCochera">Cochera</label></div>
+      <div class="check-row"><input type="checkbox" id="fParrillero" data-field="parrillero" ${f.parrillero?'checked':''}>${ICON.fire}<label for="fParrillero">Parrillero</label></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label for="fAnio">Año de construcción (opcional)</label>
+        <input type="number" id="fAnio" data-field="anioConstruccion" value="${escAttr(f.anioConstruccion)}"></div>
+      <div class="field"><label for="fPlanta">Planta (opcional)</label>
+        <input type="text" id="fPlanta" data-field="planta" placeholder="PB, 1er piso..." value="${escAttr(f.planta)}"></div>
+    </div>`);
+
+  // 5. Caracteristicas detalladas (checkboxes agrupados)
+  html += sectionWrap('detalladas','6. Características detalladas (opcional)', `
+    ${DETALLE_GROUPS.map(g=>`
+      <div class="detalle-group">
+        <div class="detalle-group-head">${ICON[g.icon]}<h3>${escHtml(g.label)}</h3></div>
+        <div class="amenities-grid">
+          ${g.items.map(it=>{
+            const val = (f.caracteristicasDetalladas[g.key] || {})[it.key];
+            if(detalleItemType(it)==='number'){
+              return `<div class="check-row detalle-num-row">
+                <input type="number" min="0" class="detalle-num-input" data-detalle-group="${g.key}" data-detalle-key="${it.key}" data-detalle-type="number" value="${escAttr(val || 0)}" id="det_${g.key}_${it.key}">
+                <label for="det_${g.key}_${it.key}">${escHtml(it.label)}</label>
+              </div>`;
+            }
+            const checked = !!val;
+            return `<div class="check-row">
+              <input type="checkbox" data-detalle-group="${g.key}" data-detalle-key="${it.key}" ${checked?'checked':''} id="det_${g.key}_${it.key}">
+              <label for="det_${g.key}_${it.key}">${escHtml(it.label)}</label>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`).join('')}`);
+
+  // 6. Comentario destacado
+  html += sectionWrap('comentario','7. Comentario destacado (opcional)', `
+    <div class="field">
+      <label for="fComentario">Comentario ${tip('Si lo completás aparece como bloque destacado en la ficha final. Ej: Renta vigente $16.500 · contrato hasta jun 2026')}</label>
+      <textarea id="fComentario" data-field="comentarioDestacado">${escHtml(f.comentarioDestacado)}</textarea>
+    </div>`);
+
+  // 6. Descripcion
+  html += sectionWrap('descripcion','8. Descripción', `
+    <div class="field">
+      <label for="fDescripcion">Descripción ${tip('Separá párrafos dejando una línea en blanco entre ellos')}</label>
+      <textarea id="fDescripcion" style="min-height:160px" data-field="descripcion">${escHtml(f.descripcion)}</textarea>
+    </div>`);
+
+  // 7. Caracteristicas dinamicas
+  html += sectionWrap('caracteristicas','9. Características', `
+    <p class="section-hint">Detalles sueltos que no entran en las secciones anteriores — texto libre, uno por renglón. Ej: "Living-comedor", "Cocina con muebles a estrenar", "Entrada independiente". Aparecen como lista en la ficha final.</p>
+    <div id="caracteristicasList">
+      ${f.caracteristicas.map((c,i)=>`
+        <div class="dyn-row">
+          <input type="text" data-carac-idx="${i}" value="${escAttr(c)}">
+          <button type="button" class="btn-x" data-del-carac="${i}">×</button>
+        </div>`).join('')}
+    </div>
+    <button type="button" class="btn-add" id="btnAddCarac">+ Agregar característica</button>`);
+
+  // 8. Amenities
+  html += sectionWrap('amenities','10. Amenities del edificio (opcional)', `
+    <div class="check-row">
+      <input type="checkbox" id="fAmenitiesEnabled" data-field="amenitiesEnabled" ${f.amenitiesEnabled?'checked':''}>
+      <label for="fAmenitiesEnabled">Este edificio tiene amenities</label>
+    </div>
+    ${f.amenitiesEnabled ? `
+      <div class="amenities-grid">
+        ${AMENITIES_COMUNES.concat(f.amenitiesCustom||[]).map(a=>`
+          <div class="check-row">
+            <input type="checkbox" data-amenity="${escAttr(a)}" ${f.amenities.includes(a)?'checked':''} id="am_${escAttr(slugify(a))}">
+            <label for="am_${escAttr(slugify(a))}">${escHtml(a)}</label>
+          </div>`).join('')}
+      </div>
+      <button type="button" class="btn-add" id="btnAddAmenity">+ Agregar otro</button>
+    ` : ''}`);
+
+  // 9. Datos tecnicos
+  html += sectionWrap('datos','11. Datos técnicos adicionales', `
+    <div id="datosList">
+      ${f.datosTecnicos.map((d,i)=>`
+        <div class="dyn-row">
+          <input type="text" placeholder="Label" data-dato-idx="${i}" data-dato-part="label" value="${escAttr(d.label)}">
+          <input type="text" placeholder="Valor" data-dato-idx="${i}" data-dato-part="valor" value="${escAttr(d.valor)}">
+          <button type="button" class="btn-x" data-del-dato="${i}">×</button>
+        </div>`).join('')}
+    </div>
+    <button type="button" class="btn-add" id="btnAddDato">+ Agregar dato</button>`);
+
+  // 10. Mapa
+  html += sectionWrap('mapa','12. Ubicación / mapa', `
+    <div class="field">
+      <label for="fReferenciaMapa">Referencia de cruce de calles (opcional) ${tip('Ej: Carlos Anaya y Cnel. De Braga. Si lo completás, el mapa se acerca a esa esquina en vez de mostrar solo el barrio en general. Nunca se muestra la dirección exacta, sigue siendo una aproximación.')}</label>
+      <input type="text" id="fReferenciaMapa" data-field="referenciaMapa" placeholder="Ej: Carlos Anaya y Cnel. De Braga" value="${escAttr(f.referenciaMapa)}">
+    </div>
+    <button type="button" class="btn-add" id="btnBuscarUbicacion">📍 Buscar ubicación</button>
+    <div id="mapGeocodeStatus" class="map-geocode-status">${typeof f.mapLat==='number' ? 'Ubicación encontrada ✓' : ''}</div>
+    <div class="map-preview">
+      <iframe src="${mapEmbedSrc(f)}" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+    </div>
+    <p style="font-size:12px;color:var(--blue);margin-top:8px;">Se genera automáticamente con el barrio y ciudad (o la referencia de cruce, si la cargaste). Al buscar la ubicación, el mapa queda sin el pin de marcador — solo zoom aproximado.</p>`);
+
+  // 11. Fotos
+  html += sectionWrap('fotos','13. Fotos', `
+    <div class="photo-toggle">
+      <button type="button" data-fotos-modo="upload" class="${f.fotosModo==='upload'?'active':''}">Subir desde PC</button>
+      <button type="button" data-fotos-modo="urls" class="${f.fotosModo==='urls'?'active':''}">URLs</button>
+    </div>
+    ${f.fotosModo==='upload' ? `
+      <div class="field">
+        <label for="fFotosFile">Elegir fotos ${tip('Podés seleccionar varias fotos a la vez desde tu computadora')}</label>
+        <input type="file" id="fFotosFile" accept="image/*" multiple>
+      </div>` : `
+      <div class="field">
+        <label for="fFotosUrls">URLs de fotos (una por línea) ${tip('Pegá el link directo de cada foto, una debajo de la otra')}</label>
+        <textarea id="fFotosUrls" style="min-height:100px" placeholder="https://...jpg">${escHtml((f.fotos||[]).map(p=>p.src).join('\n'))}</textarea>
+        <button type="button" class="btn-add" id="btnAplicarUrls" style="margin-top:8px;">Aplicar URLs</button>
+      </div>`}
+    <div class="photo-count">${f.fotos.length} foto${f.fotos.length===1?'':'s'} cargada${f.fotos.length===1?'':'s'}</div>
+    <div class="photo-grid" id="photoGrid">
+      ${f.fotos.map((p,i)=>`
+        <div class="photo-thumb ${p.isMain?'main':''}" draggable="true" data-photo-idx="${i}">
+          ${p.isMain?'<span class="pt-badge">Principal</span>':''}
+          <img src="${escAttr(p.src)}" alt="">
+          <div class="pt-actions">
+            <button type="button" class="pt-main" data-set-main="${i}">${p.isMain?'★':'☆'}</button>
+            <button type="button" class="pt-del" data-del-photo="${i}">Borrar</button>
+          </div>
+        </div>`).join('')}
+    </div>
+    <div class="field" style="margin-top:18px;">
+      <label for="fVideoUrl">Link de video (opcional) ${tip('Pegá un link de YouTube, Vimeo o Instagram (Reel o publicación). No subas el archivo de video, solo el link — así la ficha sigue siendo liviana. Se muestra como reproductor debajo de las fotos.')}</label>
+      <input type="text" id="fVideoUrl" data-field="videoUrl" placeholder="https://www.youtube.com/watch?v=..." value="${escAttr(f.videoUrl)}">
+    </div>`);
+
+  // 12. Codigo
+  html += sectionWrap('codigo','14. Código de propiedad', `
+    <div class="field">
+      <label for="fCodigo">Código ${tip('Se genera solo (IA-0001, IA-0002...). Podés dejarlo así o reemplazarlo por el código de tu sistema si querés.')}</label>
+      <input type="text" id="fCodigo" data-field="codigo" placeholder="IA-0001" value="${escAttr(f.codigo)}">
+    </div>`);
+
+  return html;
+}
+
+function escHtml(s){ return (s==null?'':String(s)).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function escAttr(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ======================= LIST RENDER ======================= */
+function renderList(){
+  const box = document.getElementById('listaFichas');
+  if(!fichas.length){
+    box.innerHTML = '<div class="empty-list">Todavía no hay fichas guardadas.<br>Tocá "+ Nueva ficha" para empezar.</div>';
+    return;
+  }
+  const sorted = [...fichas].sort((a,b)=>b.updatedAt-a.updatedAt);
+  box.innerHTML = sorted.map(f=>{
+    const active = f.id===currentId ? 'active' : '';
+    const titulo = f.titulo || '(Sin título)';
+    const sub = [f.codigo?`Cód. ${f.codigo}`:'', f.barrio||''].filter(Boolean).join(' · ') || 'Sin datos';
+    return `<div class="ficha-item ${active}" data-select-ficha="${f.id}">
+      <div class="fi-title">${escHtml(titulo)}</div>
+      <div class="fi-sub">${escHtml(sub)}</div>
+      <button type="button" class="fi-del" data-delete-ficha="${f.id}" title="Eliminar ficha">🗑</button>
+    </div>`;
+  }).join('');
+}
+
+/* ======================= FORM MOUNT & EVENTS ======================= */
+function renderForm(){
+  const container = document.querySelector('.col-form');
+  const f = getCurrent();
+  if(!f){
+    container.innerHTML = '<div class="empty-list" style="margin-top:40px;">Elegí una ficha de la lista o creá una nueva para empezar a editar.</div>';
+    return;
+  }
+  container.innerHTML = buildFormHTML(f);
+  bindFormEvents(f);
+}
+
+function bindFormEvents(f){
+  const container = document.querySelector('.col-form');
+
+  // Section collapse toggle
+  container.querySelectorAll('[data-toggle-section]').forEach(head=>{
+    head.addEventListener('click', ()=>{
+      const key = head.getAttribute('data-toggle-section');
+      const section = head.closest('.section');
+      if(collapsedSections.has(key)){ collapsedSections.delete(key); }
+      else { collapsedSections.add(key); }
+      section.classList.toggle('collapsed');
+    });
+  });
+
+  // Simple fields (input/select/textarea with data-field)
+  container.querySelectorAll('[data-field]').forEach(el=>{
+    const field = el.getAttribute('data-field');
+    const evt = (el.tagName==='SELECT' || el.type==='checkbox' || el.type==='radio') ? 'change' : 'input';
+    el.addEventListener(evt, ()=>{
+      if(el.type==='checkbox'){
+        f[field] = el.checked;
+        if(field==='amenitiesEnabled') renderForm();
+      } else if(el.type==='radio'){
+        f[field] = el.value;
+        container.querySelectorAll(`input[name="${el.name}"]`).forEach(r=>r.closest('.radio-card').classList.remove('selected'));
+        el.closest('.radio-card').classList.add('selected');
+        if(field==='tipoPropiedad' || field==='operacion') renderForm();
+      } else {
+        f[field] = el.value;
+      }
+      onFichaChanged();
+      if(field==='barrio' || field==='ciudad' || field==='referenciaMapa'){
+        // El texto cambió: la coordenada geocodificada anterior ya no es
+        // confiable — volvemos al mapa con pin hasta la próxima búsqueda.
+        f.mapLat = null; f.mapLng = null;
+        setMapGeocodeStatus('', '');
+        updateMapPreview(f);
+      }
+      if(field==='titulo' || field==='barrio' || field==='codigo') renderList();
+      if(field==='precio' || field==='moneda') updatePrecioPreview(f);
+    });
+  });
+  updatePrecioPreview(f);
+
+  // Ubicación / mapa: buscar coordenadas (geocodificación) al salir del campo
+  // (blur) o con el botón manual "Buscar ubicación".
+  ['fBarrio','fCiudad','fReferenciaMapa'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('blur', ()=>buscarUbicacionMapa(f));
+  });
+  const btnBuscarUbicacion = document.getElementById('btnBuscarUbicacion');
+  if(btnBuscarUbicacion) btnBuscarUbicacion.addEventListener('click', ()=>buscarUbicacionMapa(f));
+
+  // Características dinámicas
+  container.querySelectorAll('[data-carac-idx]').forEach(el=>{
+    el.addEventListener('input', ()=>{
+      f.caracteristicas[+el.getAttribute('data-carac-idx')] = el.value;
+      onFichaChanged();
+    });
+  });
+  container.querySelectorAll('[data-del-carac]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      f.caracteristicas.splice(+btn.getAttribute('data-del-carac'),1);
+      onFichaChanged(); renderForm();
+    });
+  });
+  const btnAddCarac = document.getElementById('btnAddCarac');
+  if(btnAddCarac) btnAddCarac.addEventListener('click', ()=>{
+    f.caracteristicas.push('');
+    onFichaChanged(); renderForm();
+    const inputs = container.querySelectorAll('[data-carac-idx]');
+    if(inputs.length) inputs[inputs.length-1].focus();
+  });
+
+  // Caracteristicas detalladas (checkboxes agrupados + campos numericos)
+  container.querySelectorAll('[data-detalle-group]').forEach(el=>{
+    const isNumber = el.getAttribute('data-detalle-type')==='number';
+    el.addEventListener(isNumber ? 'input' : 'change', ()=>{
+      const g = el.getAttribute('data-detalle-group');
+      const k = el.getAttribute('data-detalle-key');
+      if(isNumber){
+        const n = parseInt(el.value, 10);
+        f.caracteristicasDetalladas[g][k] = isNaN(n) || n < 0 ? 0 : n;
+      } else {
+        f.caracteristicasDetalladas[g][k] = el.checked;
+      }
+      onFichaChanged();
+    });
+  });
+
+  // Amenities checkboxes
+  container.querySelectorAll('[data-amenity]').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      const a = cb.getAttribute('data-amenity');
+      if(cb.checked){ if(!f.amenities.includes(a)) f.amenities.push(a); }
+      else { f.amenities = f.amenities.filter(x=>x!==a); }
+      onFichaChanged();
+    });
+  });
+  const btnAddAmenity = document.getElementById('btnAddAmenity');
+  if(btnAddAmenity) btnAddAmenity.addEventListener('click', ()=>{
+    askText('Nombre del amenity a agregar:', (val)=>{
+      if(!val) return;
+      f.amenitiesCustom = f.amenitiesCustom || [];
+      f.amenitiesCustom.push(val);
+      f.amenities.push(val);
+      onFichaChanged(); renderForm();
+    });
+  });
+
+  // Garantías aceptadas (solo cuando operación = alquiler)
+  container.querySelectorAll('[data-garantia]').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      const g = cb.getAttribute('data-garantia');
+      if(cb.checked){ if(!f.garantias.includes(g)) f.garantias.push(g); }
+      else { f.garantias = f.garantias.filter(x=>x!==g); }
+      onFichaChanged();
+    });
+  });
+  const btnAddGarantia = document.getElementById('btnAddGarantia');
+  if(btnAddGarantia) btnAddGarantia.addEventListener('click', ()=>{
+    askText('Nombre de la garantía a agregar:', (val)=>{
+      if(!val) return;
+      f.garantiasCustom = f.garantiasCustom || [];
+      f.garantiasCustom.push(val);
+      f.garantias.push(val);
+      onFichaChanged(); renderForm();
+    });
+  });
+
+  // Datos del local (solo cuando tipoPropiedad = local) — estado anidado en f.local
+  container.querySelectorAll('[data-local]').forEach(el=>{
+    const key = el.getAttribute('data-local');
+    const evt = (el.tagName==='SELECT' || el.type==='checkbox') ? 'change' : 'input';
+    el.addEventListener(evt, ()=>{
+      if(el.type==='checkbox') f.local[key] = el.checked;
+      else f.local[key] = el.value;
+      onFichaChanged();
+    });
+  });
+
+  // Datos técnicos dinámicos
+  container.querySelectorAll('[data-dato-idx]').forEach(el=>{
+    el.addEventListener('input', ()=>{
+      const idx = +el.getAttribute('data-dato-idx');
+      const part = el.getAttribute('data-dato-part');
+      f.datosTecnicos[idx][part] = el.value;
+      onFichaChanged();
+    });
+  });
+  container.querySelectorAll('[data-del-dato]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      f.datosTecnicos.splice(+btn.getAttribute('data-del-dato'),1);
+      onFichaChanged(); renderForm();
+    });
+  });
+  const btnAddDato = document.getElementById('btnAddDato');
+  if(btnAddDato) btnAddDato.addEventListener('click', ()=>{
+    f.datosTecnicos.push({label:'', valor:''});
+    onFichaChanged(); renderForm();
+  });
+
+  // Fotos: modo toggle
+  container.querySelectorAll('[data-fotos-modo]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      f.fotosModo = btn.getAttribute('data-fotos-modo');
+      onFichaChanged(); renderForm();
+    });
+  });
+
+  // Fotos: subir desde PC (con compresion automatica)
+  const fFotosFile = document.getElementById('fFotosFile');
+  if(fFotosFile) fFotosFile.addEventListener('change', (e)=>{
+    const files = Array.from(e.target.files||[]);
+    if(!files.length) return;
+    const label = container.querySelector('label[for="fFotosFile"]');
+    const originalLabelHtml = label ? label.innerHTML : null;
+    if(label) label.innerHTML = `Procesando ${files.length} foto${files.length===1?'':'s'}... ${tip('Comprimiendo para que la ficha no pese demasiado')}`;
+    fFotosFile.disabled = true;
+    Promise.all(files.map(file=>compressImageFile(file, PHOTO_MAX_DIM, PHOTO_QUALITY)))
+      .then(results=>{
+        results.forEach(src=>{ f.fotos.push({src, isMain: f.fotos.length===0}); });
+        onFichaChanged(); renderForm();
+      })
+      .catch(()=>{
+        fFotosFile.disabled = false;
+        if(label && originalLabelHtml!==null) label.innerHTML = originalLabelHtml;
+        showModal('No se pudo procesar alguna de las fotos elegidas. Probá de nuevo con esa foto, o con otra.', ()=>{}, {onlyOk:true});
+      });
+  });
+
+  // Fotos: URLs
+  const btnAplicarUrls = document.getElementById('btnAplicarUrls');
+  if(btnAplicarUrls) btnAplicarUrls.addEventListener('click', ()=>{
+    const ta = document.getElementById('fFotosUrls');
+    const urls = ta.value.split('\n').map(s=>s.trim()).filter(Boolean);
+    f.fotos = urls.map((u,i)=>({src:u, isMain:i===0}));
+    onFichaChanged(); renderForm();
+  });
+
+  // Fotos: marcar principal / borrar
+  container.querySelectorAll('[data-set-main]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const idx = +btn.getAttribute('data-set-main');
+      f.fotos.forEach((p,i)=>p.isMain = i===idx);
+      onFichaChanged(); renderForm();
+    });
+  });
+  container.querySelectorAll('[data-del-photo]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const idx = +btn.getAttribute('data-del-photo');
+      const wasMain = f.fotos[idx].isMain;
+      f.fotos.splice(idx,1);
+      if(wasMain && f.fotos.length) f.fotos[0].isMain = true;
+      onFichaChanged(); renderForm();
+    });
+  });
+
+  // Fotos: drag & drop reorder
+  container.querySelectorAll('.photo-thumb').forEach(thumb=>{
+    thumb.addEventListener('dragstart', ()=>{
+      dragPhotoIndex = +thumb.getAttribute('data-photo-idx');
+    });
+    thumb.addEventListener('dragover', (e)=> e.preventDefault());
+    thumb.addEventListener('drop', (e)=>{
+      e.preventDefault();
+      const targetIdx = +thumb.getAttribute('data-photo-idx');
+      if(dragPhotoIndex===null || dragPhotoIndex===targetIdx) return;
+      const moved = f.fotos.splice(dragPhotoIndex,1)[0];
+      f.fotos.splice(targetIdx,0,moved);
+      dragPhotoIndex = null;
+      onFichaChanged(); renderForm();
+    });
+  });
+
+  updateMapPreview(f);
+}
+
+function updateMapPreview(f){
+  const iframe = document.querySelector('.map-preview iframe');
+  if(!iframe) return;
+  iframe.src = mapEmbedSrc(f);
+}
+
+function updatePrecioPreview(f){
+  const el = document.getElementById('precioPreview');
+  if(!el) return;
+  const digits = String(f.precio == null ? '' : f.precio).replace(/[^\d]/g, '');
+  el.textContent = digits ? ('Se verá: ' + formatPrice(f)) : '';
+}
+
+function onFichaChanged(){
+  const f = getCurrent();
+  if(f) f.updatedAt = Date.now();
+  markDirty();
+  updatePreview();
+}
+
+/* Simple inline prompt helper (kept minimal, browser prompt is fine for a single text value) */
+function askText(message, cb){
+  const val = window.prompt(message, '');
+  if(val && val.trim()) cb(val.trim());
+}
+
+/* ======================= FICHA HTML GENERATOR ======================= */
+const OPERACION_LABEL = { venta:'Venta', alquiler:'Alquiler', renta:'Venta con renta' };
+
+function formatPrice(f){
+  // Los precios inmobiliarios son números enteros. Se ignoran puntos/comas/
+  // espacios que el usuario haya escrito como separadores de miles (ej:
+  // "39.990" o "39,990" o "39 990" → 39990) y se re-formatea con el punto de
+  // miles uruguayo automáticamente ("$ 39.990"). Robusto ante la costumbre de
+  // escribir el precio con el punto de miles.
+  const digits = String(f.precio == null ? '' : f.precio).replace(/[^\d]/g, '');
+  const n = digits ? Number(digits) : 0;
+  const formatted = n.toLocaleString('es-UY');
+  if(f.moneda==='UYU') return `$ ${formatted}`;
+  if(f.moneda==='USD_ANV') return `US$ ${formatted} + saldo ANV`;
+  return `US$ ${formatted}`;
+}
+
+// La ficha se descarga SIEMPRE como "index.html" para subir directo a Netlify
+// sin renombrar (index.html es la "portada" que Netlify muestra en la raíz del
+// link). El nombre de la propiedad no se pierde: va en el nombre del proyecto
+// de Netlify (el subdominio del link), no en el archivo.
+function fichaFileName(f){
+  return 'index.html';
+}
+
+// Limpieza SEGURA de texto (solo aplica a la ficha final, NO altera lo que el
+// usuario escribió en el formulario). No toca palabras ni tildes: solo colapsa
+// espacios repetidos, saca el espacio antes de signos de puntuación y pone
+// mayúscula inicial. Sin riesgo de cambiar el sentido.
+function limpiarTextoSeguro(s){
+  let t = String(s == null ? '' : s)
+    .replace(/[ \t]+/g, ' ')            // espacios múltiples -> uno
+    .replace(/ +([,.;:!?])/g, '$1')     // sacar espacio antes de , . ; : ! ?
+    .replace(/\s+$/,'').replace(/^\s+/,''); // trim
+  if(t) t = t.charAt(0).toUpperCase() + t.slice(1);
+  return t;
+}
+
+// Cada línea no vacía se muestra como un párrafo prolijo (mejor disposición),
+// con espaciado parejo. El texto queda limpio pero sin cambiar palabras.
+function descripcionParrafos(desc){
+  return (desc||'').split('\n')
+    .map(l=>limpiarTextoSeguro(l))
+    .filter(Boolean)
+    .map(p=>`<p>${escHtml(p)}</p>`).join('\n      ');
+}
+
+/* Video: se pega un LINK (YouTube / Vimeo / Instagram), nunca el archivo —
+   así la ficha se mantiene liviana. Detecta la plataforma y arma el embed
+   correspondiente; si no reconoce el link, muestra un botón "Ver video". */
+function extractYouTubeId(url){
+  const m = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{6,})/i);
+  return m ? m[1] : null;
+}
+function extractVimeoId(url){
+  const m = url.match(/vimeo\.com\/(?:video\/)?(\d+)/i);
+  return m ? m[1] : null;
+}
+function extractInstagramPermalink(url){
+  const m = url.match(/instagram\.com\/(reel|reels|p|tv)\/([A-Za-z0-9_-]+)/i);
+  if(!m) return null;
+  const kind = m[1]==='reels' ? 'reel' : m[1];
+  return `https://www.instagram.com/${kind}/${m[2]}/`;
+}
+
+function buildVideoBlock(f){
+  const url = (f.videoUrl || '').trim();
+  if(!url) return '';
+  const yt = extractYouTubeId(url);
+  if(yt){
+    return `
+    <h2>Video</h2>
+    <div class="video-wrap">
+      <iframe src="https://www.youtube.com/embed/${yt}" loading="lazy" title="Video de la propiedad" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+    </div>`;
+  }
+  const vim = extractVimeoId(url);
+  if(vim){
+    return `
+    <h2>Video</h2>
+    <div class="video-wrap">
+      <iframe src="https://player.vimeo.com/video/${vim}" loading="lazy" title="Video de la propiedad" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>
+    </div>`;
+  }
+  const ig = extractInstagramPermalink(url);
+  if(ig){
+    return `
+    <h2>Video</h2>
+    <div class="video-wrap video-instagram">
+      <blockquote class="instagram-media" data-instgrm-permalink="${escAttr(ig)}" data-instgrm-version="14" style="margin:0;width:100%;"></blockquote>
+    </div>
+    <script async src="https://www.instagram.com/embed.js"><\/script>`;
+  }
+  return `
+    <h2>Video</h2>
+    <a class="btn btn-tel" href="${escAttr(url)}" target="_blank" rel="noopener">Ver video</a>`;
+}
+
+function generarFichaHTML(f){
+  const price = formatPrice(f);
+  const badge = OPERACION_LABEL[f.operacion] || 'Venta';
+  const mainPhoto = f.fotos.find(p=>p.isMain) || f.fotos[0] || null;
+  const photos = f.fotos.length ? f.fotos.map(p=>p.src) : (mainPhoto ? [mainPhoto.src] : []);
+  const heroSrc = mainPhoto ? mainPhoto.src : '';
+  const heroIdx = mainPhoto ? Math.max(0, f.fotos.indexOf(mainPhoto)) : 0;
+  const titulo = f.titulo || 'Propiedad';
+  const ubicacionTxt = [f.barrio, f.ciudad].filter(Boolean).join(' · ');
+  const mapSrc = mapEmbedSrc(f);
+  const waMsg = encodeURIComponent(`Hola, me interesa la propiedad de ${f.barrio || 'esta propiedad'} (cód. ${f.codigo || 's/n'})`);
+
+  // Stats
+  let stats = '';
+  if(f.dormitorios) stats += `<span>${ICON.bed.replace('<svg ','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ')}${f.dormitorios} dormitorio${Number(f.dormitorios)===1?'':'s'}</span>\n      `;
+  if(f.banos) stats += `<span>${ICON.bath}${f.banos} baño${Number(f.banos)===1?'':'s'}</span>\n      `;
+  if(f.metraje) stats += `<span>${ICON.ruler}${f.metraje} m²</span>\n      `;
+  if(f.cochera) stats += `<span>${ICON.car}Cochera</span>\n      `;
+  if(f.parrillero) stats += `<span>${ICON.fire}Parrillero</span>\n      `;
+  if(f.tipoPropiedad==='apartamento'){
+    if(f.subtipoApartamento) stats += `<span>${ICON.building}${escHtml(f.subtipoApartamento)}</span>\n      `;
+    if(f.disposicion) stats += `<span>${ICON.building}${escHtml(f.disposicion)}</span>\n      `;
+  }
+  DETALLE_GROUPS.forEach(g=>{
+    const sel = f.caracteristicasDetalladas && f.caracteristicasDetalladas[g.key] ? f.caracteristicasDetalladas[g.key] : {};
+    g.items.forEach(it=>{
+      const val = sel[it.key];
+      if(detalleItemType(it)==='number'){
+        if(val > 0) stats += `<span>${ICON[g.icon]}${val} ${escHtml(it.label).toLowerCase()}</span>\n      `;
+      } else if(val){
+        stats += `<span>${ICON[g.icon]}${escHtml(it.label)}</span>\n      `;
+      }
+    });
+  });
+
+  // Rent / comentario destacado block (con limpieza segura, igual que la
+  // descripción — no altera lo escrito, solo la salida)
+  const comentarioLimpio = (f.comentarioDestacado||'').split('\n')
+    .map(l=>escHtml(limpiarTextoSeguro(l))).filter(Boolean).join('<br>');
+  const rentBlock = comentarioLimpio ? `
+    <div class="rent-block">
+      <div class="rent-label">Destacado</div>
+      <div class="rent-value">${comentarioLimpio}</div>
+    </div>` : '';
+
+  // Video (link YouTube/Vimeo/Instagram, opcional)
+  const videoBlock = buildVideoBlock(f);
+
+  // Descripcion
+  const descBlock = f.descripcion ? `
+    <h2>Descripción</h2>
+    <div class="desc">
+      ${descripcionParrafos(f.descripcion)}
+    </div>` : '';
+
+  // Caracteristicas
+  const caracList = (f.caracteristicas||[]).filter(c=>c && c.trim());
+  const featuresBlock = caracList.length ? `
+    <h2>Características</h2>
+    <div class="features">
+      ${caracList.map(c=>`<div class="feat"><span class="feat-dot"></span>${escHtml(c)}</div>`).join('\n      ')}
+    </div>` : '';
+
+  // Amenities (nueva sección)
+  const amenitiesList = f.amenitiesEnabled ? (f.amenities||[]).filter(a=>a && a.trim()) : [];
+  const amenitiesBlock = amenitiesList.length ? `
+    <h2>Amenities del edificio</h2>
+    <div class="amenities">
+      ${amenitiesList.map(a=>`<div class="amenity">${ICON.check}<span>${escHtml(a)}</span></div>`).join('\n      ')}
+    </div>` : '';
+
+  // Garantías aceptadas (solo si operación = alquiler)
+  const garantiasList = f.operacion==='alquiler' ? (f.garantias||[]).filter(g=>g && g.trim()) : [];
+  const garantiasBlock = garantiasList.length ? `
+    <h2>Garantías aceptadas</h2>
+    <div class="amenities">
+      ${garantiasList.map(g=>`<div class="amenity">${ICON.check}<span>${escHtml(g)}</span></div>`).join('\n      ')}
+    </div>` : '';
+
+  // Datos tecnicos (planta + anio + custom pairs)
+  let datosRows = '';
+  if(f.planta) datosRows += `<div class="detail-row"><span class="detail-label">Planta</span><span class="detail-value">${escHtml(f.planta)}</span></div>\n      `;
+  if(f.anioConstruccion) datosRows += `<div class="detail-row"><span class="detail-label">Año de construcción</span><span class="detail-value">${escHtml(f.anioConstruccion)}</span></div>\n      `;
+  if(f.tipoPropiedad==='apartamento'){
+    if(f.cantidadPisos) datosRows += `<div class="detail-row"><span class="detail-label">Cantidad de pisos</span><span class="detail-value">${escHtml(f.cantidadPisos)}</span></div>\n      `;
+    if(f.aptosPorPiso) datosRows += `<div class="detail-row"><span class="detail-label">Apartamentos por piso</span><span class="detail-value">${escHtml(f.aptosPorPiso)}</span></div>\n      `;
+    if(f.porteriaHorario) datosRows += `<div class="detail-row"><span class="detail-label">Portería</span><span class="detail-value">${escHtml(f.porteriaHorario)}</span></div>\n      `;
+    if(f.seguridad) datosRows += `<div class="detail-row"><span class="detail-label">Seguridad</span><span class="detail-value">${escHtml(f.seguridad)}</span></div>\n      `;
+    if(f.gastosComunes) datosRows += `<div class="detail-row"><span class="detail-label">Gastos comunes</span><span class="detail-value">${escHtml(f.gastosComunes)}</span></div>\n      `;
+  }
+  if(f.tipoPropiedad==='local'){
+    const L = f.local || {};
+    const rowLocal = (label, val, suffix)=>{
+      if(val !== '' && val != null && val !== false){
+        datosRows += `<div class="detail-row"><span class="detail-label">${label}</span><span class="detail-value">${escHtml(val)}${suffix||''}</span></div>\n      `;
+      }
+    };
+    rowLocal('Superficie edificada', L.supEdificada, ' m²');
+    rowLocal('Superficie del terreno', L.supTerreno, ' m²');
+    rowLocal('Superficie salón principal', L.supSalon, ' m²');
+    rowLocal('Altura salón principal', L.alturaSalon, ' m');
+    rowLocal('Frente', L.frente, ' m');
+    rowLocal('Cantidad de plantas', L.plantas);
+    rowLocal('Conservación', L.conservacion);
+    rowLocal('Techo', L.techo);
+    rowLocal('Salones', L.salones);
+    rowLocal('Oficinas', L.oficinas);
+    rowLocal('Entrada de vehículos para', L.entradaVehiculos);
+    rowLocal('Apto profesional / habilitación', L.aptoProfesional);
+    rowLocal('Gastos comunes', L.gastosComunes);
+    if(L.vidriera) rowLocal('Vidriera / vitrina', 'Sí');
+    if(L.sobreAvenida) rowLocal('Sobre avenida / esquina', 'Sí');
+    if(L.accesibilidad) rowLocal('Accesibilidad', 'Rampa / baño adaptado');
+  }
+  (f.datosTecnicos||[]).forEach(d=>{
+    if(d.label && d.label.trim()){
+      datosRows += `<div class="detail-row"><span class="detail-label">${escHtml(d.label)}</span><span class="detail-value">${escHtml(d.valor)}</span></div>\n      `;
+    }
+  });
+  const datosBlock = datosRows ? `
+    <h2>Datos técnicos</h2>
+    <div class="details">
+      ${datosRows}
+    </div>` : '';
+
+  // Galería de fotos visible (thumbnails). Solo si hay más de 1 foto — con 1
+  // sola alcanza con el hero. Cada foto abre la galería ampliada (lightbox).
+  const galleryBlock = photos.length > 1 ? `
+    <h2>Fotos</h2>
+    <div class="gallery">
+      ${photos.map((src,i)=>`<div class="gallery-item" onclick="openLightbox(${i})"><img src="${escAttr(src)}" alt="" loading="lazy"></div>`).join('\n      ')}
+    </div>` : '';
+
+  const photosJs = JSON.stringify(photos);
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escHtml(titulo)} — ${escHtml(price)} · IA Propiedades</title>
+<meta name="description" content="${escAttr(titulo)}. ${escAttr(ubicacionTxt)}. ${escAttr(price)}.">
+<meta property="og:title" content="${escAttr(titulo)} — ${escAttr(price)}">
+<meta property="og:description" content="${escAttr(ubicacionTxt)}. ${escAttr(f.comentarioDestacado || titulo)}">
+${heroSrc ? `<meta property="og:image" content="${escAttr(heroSrc)}">` : ''}
+<meta property="og:type" content="website">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    background: #F0F3F6;
+    color: #1B2A3F;
+    line-height: 1.5;
+  }
+  .page { max-width: 640px; margin: 0 auto; background: #F0F3F6; min-height: 100vh; }
+  .top-bar { padding: 14px 20px; background: #1B2A3F; color: #F0F3F6; display: flex; align-items: center; justify-content: space-between; }
+  .top-bar .brand { font-size: 14px; letter-spacing: 0.18em; font-weight: 500; }
+  .top-bar .brand strong { font-weight: 700; }
+  .top-bar .code { font-size: 11px; color: #8DA4BE; letter-spacing: 0.1em; }
+  .hero { position: relative; width: 100%; aspect-ratio: 4/3; background: #C4D0DE; overflow: hidden; cursor: pointer; }
+  .hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .badge { position: absolute; top: 14px; left: 14px; background: #1B2A3F; color: #F0F3F6; font-size: 11px; padding: 6px 12px; border-radius: 20px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
+  .photo-count { position: absolute; bottom: 14px; right: 14px; background: rgba(27, 42, 63, 0.85); color: #F0F3F6; font-size: 12px; padding: 8px 14px; border-radius: 20px; display: flex; align-items: center; gap: 6px; }
+  .body { padding: 24px 20px; }
+  .loc { font-size: 11px; color: #2E4A6B; letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 8px; font-weight: 500; }
+  h1 { font-size: 22px; font-weight: 500; line-height: 1.3; color: #1B2A3F; margin-bottom: 14px; }
+  .price { font-size: 28px; font-weight: 500; color: #1B2A3F; letter-spacing: -0.01em; margin-bottom: 18px; }
+  .stats { display: flex; gap: 20px; padding: 16px 0; border-top: 0.5px solid #8DA4BE; border-bottom: 0.5px solid #8DA4BE; font-size: 14px; color: #2E4A6B; margin-bottom: 20px; flex-wrap: wrap; }
+  .stats span { display: flex; align-items: center; gap: 6px; font-weight: 500; }
+  .stats svg { width: 18px; height: 18px; stroke: #2E4A6B; }
+  .rent-block { background: #FFFFFF; border-left: 3px solid #1B2A3F; padding: 14px 16px; margin-bottom: 22px; border-radius: 4px; }
+  .rent-label { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #2E4A6B; margin-bottom: 4px; font-weight: 500; }
+  .rent-value { font-size: 16px; color: #1B2A3F; font-weight: 500; }
+  .rent-sub { font-size: 12px; color: #2E4A6B; margin-top: 4px; }
+  h2 { font-size: 16px; font-weight: 500; color: #1B2A3F; margin: 28px 0 12px; letter-spacing: 0.02em; }
+  .gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+  .gallery-item { aspect-ratio: 4/3; border-radius: 6px; overflow: hidden; cursor: pointer; background: #C4D0DE; }
+  .gallery-item img { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity 0.15s; }
+  .gallery-item:hover img { opacity: 0.85; }
+  .desc { font-size: 15px; line-height: 1.65; color: #2E4A6B; margin-bottom: 8px; }
+  .desc p { margin-bottom: 12px; }
+  .features { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 20px; margin-top: 8px; }
+  .feat { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #2E4A6B; padding: 4px 0; }
+  .feat-dot { width: 6px; height: 6px; border-radius: 50%; background: #1B2A3F; flex-shrink: 0; }
+  .amenities { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 20px; margin-top: 8px; }
+  .amenity { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #2E4A6B; padding: 4px 0; }
+  .amenity svg { width: 16px; height: 16px; stroke: #1B2A3F; flex-shrink: 0; }
+  .details { background: #FFFFFF; border-radius: 8px; padding: 4px 16px; margin-top: 8px; }
+  .detail-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 0.5px solid #E0E6EC; font-size: 14px; }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-label { color: #2E4A6B; }
+  .detail-value { color: #1B2A3F; font-weight: 500; text-align: right; }
+  .map-wrap { border-radius: 8px; overflow: hidden; margin-top: 8px; border: 0.5px solid #8DA4BE; }
+  .map-wrap iframe { display: block; width: 100%; height: 260px; border: 0; }
+  .map-note { font-size: 12px; color: #2E4A6B; margin-top: 8px; font-style: italic; }
+  .video-wrap { position: relative; width: 100%; padding-top: 56.25%; border-radius: 8px; overflow: hidden; margin-top: 8px; background: #000; }
+  .video-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .video-wrap.video-instagram { padding-top: 0; background: none; }
+  .contact-section { background: #FFFFFF; border-radius: 12px; padding: 22px 20px; margin: 32px 0 20px; text-align: center; }
+  .contact-title { font-size: 15px; color: #1B2A3F; margin-bottom: 4px; font-weight: 500; }
+  .contact-sub { font-size: 13px; color: #2E4A6B; margin-bottom: 18px; }
+  .btn-group { display: flex; flex-direction: column; gap: 10px; }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px; border-radius: 8px; font-size: 15px; font-weight: 500; letter-spacing: 0.02em; text-decoration: none; transition: opacity 0.15s; }
+  .btn:hover { opacity: 0.9; }
+  .btn-wa { background: #25D366; color: #FFFFFF; }
+  .btn-tel { background: #1B2A3F; color: #F0F3F6; }
+  .btn-mail { background: transparent; color: #1B2A3F; border: 1px solid #1B2A3F; }
+  .btn svg { width: 20px; height: 20px; }
+  .hours { font-size: 12px; color: #2E4A6B; margin-top: 14px; }
+  .footer { background: #1B2A3F; color: #8DA4BE; padding: 24px 20px; text-align: center; font-size: 12px; letter-spacing: 0.04em; }
+  .footer .brand-f { color: #F0F3F6; font-size: 16px; letter-spacing: 0.18em; margin-bottom: 6px; font-weight: 500; }
+  .footer a { color: #F0F3F6; text-decoration: none; }
+  .lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 1000; align-items: center; justify-content: center; padding: 20px; }
+  .lightbox.active { display: flex; }
+  .lightbox-img { max-width: 100%; max-height: 85vh; object-fit: contain; }
+  .lightbox-close, .lightbox-prev, .lightbox-next { position: absolute; background: rgba(255,255,255,0.1); color: #FFFFFF; border: none; width: 44px; height: 44px; border-radius: 50%; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .lightbox-close { top: 20px; right: 20px; }
+  .lightbox-prev { left: 20px; top: 50%; transform: translateY(-50%); }
+  .lightbox-next { right: 20px; top: 50%; transform: translateY(-50%); }
+  .lightbox-counter { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); color: #FFFFFF; font-size: 14px; background: rgba(255,255,255,0.1); padding: 6px 14px; border-radius: 20px; }
+  @media (min-width: 641px) { .page { margin: 20px auto; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 30px rgba(27,42,63,0.08); } body { padding: 0; } }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <div class="top-bar">
+    <div class="brand"><strong>IA</strong>&nbsp;PROPIEDADES</div>
+    ${f.codigo ? `<div class="code">Cód. ${escHtml(f.codigo)}</div>` : ''}
+  </div>
+
+  <div class="hero" onclick="openLightbox(${heroIdx})">
+    ${heroSrc ? `<img src="${escAttr(heroSrc)}" alt="${escAttr(titulo)}">` : ''}
+    <div class="badge">${escHtml(badge)}</div>
+    ${photos.length ? `<div class="photo-count">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>
+      Ver todas las fotos (${photos.length})
+    </div>` : ''}
+  </div>
+
+  <div class="body">
+    <div class="loc">${escHtml(ubicacionTxt)}</div>
+    <h1>${escHtml(titulo)}</h1>
+    <div class="price">${escHtml(price)}</div>
+
+    ${stats ? `<div class="stats">
+      ${stats}
+    </div>` : ''}
+
+    ${galleryBlock}
+    ${rentBlock}
+    ${videoBlock}
+    ${descBlock}
+    ${featuresBlock}
+    ${amenitiesBlock}
+    ${garantiasBlock}
+    ${datosBlock}
+
+    <h2>Ubicación</h2>
+    <div class="map-wrap">
+      <iframe
+        src="${mapSrc}"
+        loading="lazy"
+        referrerpolicy="no-referrer-when-downgrade"></iframe>
+    </div>
+    <div class="map-note">Ubicación referencial del barrio. Coordinamos visita para dirección exacta.</div>
+
+    <div class="contact-section">
+      <div class="contact-title">Coordinar visita</div>
+      <div class="contact-sub">IA Propiedades</div>
+      <div class="btn-group">
+        <a class="btn btn-wa" href="https://wa.me/59899177429?text=${waMsg}">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.1-1.7-.8-2-.9-.3-.1-.5-.1-.7.1-.2.3-.7.9-.9 1.1-.2.2-.3.2-.6.1-.3-.1-1.2-.4-2.3-1.4-.8-.7-1.4-1.7-1.5-1.9-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5-.1-.1-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.3 5.2 4.6.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.7-.7 2-1.4.2-.7.2-1.2.2-1.4 0-.1-.3-.2-.6-.3M12 2C6.5 2 2 6.5 2 12c0 1.8.5 3.5 1.3 4.9L2 22l5.2-1.4c1.4.8 3.1 1.2 4.8 1.2 5.5 0 10-4.5 10-10S17.5 2 12 2"/></svg>
+          WhatsApp: 099 177 429
+        </a>
+        <a class="btn btn-wa" style="opacity:0.85;" href="https://wa.me/59899596373?text=${waMsg}">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.1-1.7-.8-2-.9-.3-.1-.5-.1-.7.1-.2.3-.7.9-.9 1.1-.2.2-.3.2-.6.1-.3-.1-1.2-.4-2.3-1.4-.8-.7-1.4-1.7-1.5-1.9-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5-.1-.1-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.3 5.2 4.6.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.7-.7 2-1.4.2-.7.2-1.2.2-1.4 0-.1-.3-.2-.6-.3M12 2C6.5 2 2 6.5 2 12c0 1.8.5 3.5 1.3 4.9L2 22l5.2-1.4c1.4.8 3.1 1.2 4.8 1.2 5.5 0 10-4.5 10-10S17.5 2 12 2"/></svg>
+          WhatsApp alternativo: 099 596 373
+        </a>
+        <a class="btn btn-tel" href="tel:+59822008182">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          Llamar: 2200 8182
+        </a>
+        <a class="btn btn-mail" href="mailto:ventas@iapropiedades.uy?subject=Consulta%20propiedad%20${encodeURIComponent(f.codigo||'')}%20${encodeURIComponent(f.barrio||'')}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
+          ventas@iapropiedades.uy
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="brand-f"><strong>IA</strong> PROPIEDADES</div>
+    <div><a href="https://iapropiedades.uy">iapropiedades.uy</a></div>
+    ${f.codigo ? `<div style="margin-top: 8px;">Cód. ${escHtml(f.codigo)}</div>` : ''}
+  </div>
+
+</div>
+
+<div class="lightbox" id="lightbox">
+  <button class="lightbox-close" onclick="closeLightbox()">✕</button>
+  <button class="lightbox-prev" onclick="prevPhoto()">‹</button>
+  <img class="lightbox-img" id="lightbox-img" alt="">
+  <button class="lightbox-next" onclick="nextPhoto()">›</button>
+  <div class="lightbox-counter" id="lightbox-counter">1 / ${photos.length}</div>
+</div>
+
+<script>
+  const photos = ${photosJs};
+  let currentPhoto = 0;
+  const lb = document.getElementById('lightbox');
+  const lbImg = document.getElementById('lightbox-img');
+  const lbCounter = document.getElementById('lightbox-counter');
+  function openLightbox(i) { if(!photos.length) return; currentPhoto = i; updateLightbox(); lb.classList.add('active'); }
+  function closeLightbox() { lb.classList.remove('active'); }
+  function nextPhoto() { currentPhoto = (currentPhoto + 1) % photos.length; updateLightbox(); }
+  function prevPhoto() { currentPhoto = (currentPhoto - 1 + photos.length) % photos.length; updateLightbox(); }
+  function updateLightbox() { lbImg.src = photos[currentPhoto]; lbCounter.textContent = (currentPhoto + 1) + ' / ' + photos.length; }
+  lb.addEventListener('click', (e) => { if (e.target === lb) closeLightbox(); });
+  document.addEventListener('keydown', (e) => {
+    if (!lb.classList.contains('active')) return;
+    if (e.key === 'Escape') closeLightbox();
+    if (e.key === 'ArrowRight') nextPhoto();
+    if (e.key === 'ArrowLeft') prevPhoto();
+  });
+<\/script>
+
+</body>
+</html>`;
+}
+
+/* ======================= PREVIEW ======================= */
+let previewTimer = null;
+function updatePreview(){
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(()=>{
+    const f = getCurrent();
+    const iframe = document.getElementById('previewFrame');
+    if(!f){ iframe.srcdoc = ''; return; }
+    iframe.srcdoc = generarFichaHTML(f);
+  }, 200);
+}
+
+/* ======================= DOWNLOAD ======================= */
+// CRC-32 (para armar el ZIP). Tabla generada una vez.
+function _crc32(buf){
+  if(!_crc32._t){
+    const t = new Uint32Array(256);
+    for(let n=0;n<256;n++){
+      let c = n;
+      for(let k=0;k<8;k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    _crc32._t = t;
+  }
+  const t = _crc32._t;
+  let crc = 0xFFFFFFFF;
+  for(let i=0;i<buf.length;i++) crc = (t[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8)) >>> 0;
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+// Arma un ZIP (formato "stored", sin compresión) con UN solo archivo adentro.
+// Sin librerías externas. Suficiente para empaquetar index.html y subir a
+// Netlify (Netlify extrae el zip solo y sirve index.html en la raíz).
+function buildZipSingleFile(nombreInterno, contentBytes){
+  const enc = new TextEncoder();
+  const nameBytes = enc.encode(nombreInterno);
+  const crc = _crc32(contentBytes);
+  const size = contentBytes.length;
+  const nameLen = nameBytes.length;
+  const total = (30 + nameLen) + size + (46 + nameLen) + 22;
+  const out = new Uint8Array(total);
+  const dv = new DataView(out.buffer);
+  let o = 0;
+  // --- Local file header ---
+  dv.setUint32(o, 0x04034b50, true); o+=4;
+  dv.setUint16(o, 20, true); o+=2;   // version needed
+  dv.setUint16(o, 0, true);  o+=2;   // flags
+  dv.setUint16(o, 0, true);  o+=2;   // method 0 = stored
+  dv.setUint16(o, 0, true);  o+=2;   // mod time
+  dv.setUint16(o, 0x21, true); o+=2; // mod date (1980-01-01)
+  dv.setUint32(o, crc, true); o+=4;
+  dv.setUint32(o, size, true); o+=4; // comp size
+  dv.setUint32(o, size, true); o+=4; // uncomp size
+  dv.setUint16(o, nameLen, true); o+=2;
+  dv.setUint16(o, 0, true); o+=2;    // extra len
+  out.set(nameBytes, o); o+=nameLen;
+  out.set(contentBytes, o); o+=size;
+  const centralStart = o;
+  // --- Central directory header ---
+  dv.setUint32(o, 0x02014b50, true); o+=4;
+  dv.setUint16(o, 20, true); o+=2;   // version made by
+  dv.setUint16(o, 20, true); o+=2;   // version needed
+  dv.setUint16(o, 0, true);  o+=2;   // flags
+  dv.setUint16(o, 0, true);  o+=2;   // method
+  dv.setUint16(o, 0, true);  o+=2;   // mod time
+  dv.setUint16(o, 0x21, true); o+=2; // mod date
+  dv.setUint32(o, crc, true); o+=4;
+  dv.setUint32(o, size, true); o+=4;
+  dv.setUint32(o, size, true); o+=4;
+  dv.setUint16(o, nameLen, true); o+=2;
+  dv.setUint16(o, 0, true); o+=2;    // extra
+  dv.setUint16(o, 0, true); o+=2;    // comment
+  dv.setUint16(o, 0, true); o+=2;    // disk number
+  dv.setUint16(o, 0, true); o+=2;    // internal attrs
+  dv.setUint32(o, 0, true); o+=4;    // external attrs
+  dv.setUint32(o, 0, true); o+=4;    // offset of local header
+  out.set(nameBytes, o); o+=nameLen;
+  const centralSize = o - centralStart;
+  // --- End of central directory ---
+  dv.setUint32(o, 0x06054b50, true); o+=4;
+  dv.setUint16(o, 0, true); o+=2;    // disk
+  dv.setUint16(o, 0, true); o+=2;    // disk with cd
+  dv.setUint16(o, 1, true); o+=2;    // entries this disk
+  dv.setUint16(o, 1, true); o+=2;    // total entries
+  dv.setUint32(o, centralSize, true); o+=4;
+  dv.setUint32(o, centralStart, true); o+=4;
+  dv.setUint16(o, 0, true); o+=2;    // comment len
+  return out;
+}
+
+// Nombre descriptivo del ZIP que se descarga (el archivo adentro siempre es
+// index.html). Ej: "alquiler-la-blanqueada-ia-0001.zip".
+function zipFileName(f){
+  const opLabels = { venta:'venta', alquiler:'alquiler', renta:'venta-renta' };
+  const op = slugify(opLabels[f.operacion] || 'ficha');
+  const barrio = slugify(f.barrio) || 'propiedad';
+  const cod = slugify(f.codigo);
+  return [op, barrio, cod].filter(Boolean).join('-') + '.zip';
+}
+
+function descargarFichaHTML(){
+  const f = getCurrent();
+  if(!f){ showModal('Elegí o creá una ficha antes de descargar.', ()=>{}, {onlyOk:true}); return; }
+  const html = generarFichaHTML(f);
+  const bytes = new TextEncoder().encode(html);
+  const zip = buildZipSingleFile('index.html', bytes);
+  const blob = new Blob([zip], {type:'application/zip'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = zipFileName(f);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/* ======================= BACKUP EXPORT / IMPORT ======================= */
+function descargarBackupArchivo(nombre){
+  const blob = new Blob([JSON.stringify(fichas, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportarBackup(){
+  const stamp = new Date().toISOString().slice(0,10);
+  descargarBackupArchivo(`ia-propiedades-fichas-backup-${stamp}.json`);
+}
+
+// Respaldo automático: baja una copia una vez por día (la primera vez que se
+// guarda algo ese día), sin que el usuario tenga que apretar nada. Idempotente
+// por día vía la fecha guardada en localStorage.
+const AUTOBACKUP_KEY = 'ia_fichas_last_autobackup';
+function maybeAutoBackup(){
+  try{
+    if(!fichas.length) return;
+    const today = new Date().toISOString().slice(0,10);
+    if(localStorage.getItem(AUTOBACKUP_KEY) === today) return;
+    localStorage.setItem(AUTOBACKUP_KEY, today); // marcar antes, evita descargas repetidas
+    descargarBackupArchivo(`respaldo-fichas-${today}.json`);
+  }catch(e){}
+}
+
+function importarBackup(file){
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    let parsed;
+    try{ parsed = JSON.parse(reader.result); }
+    catch(e){ showModal('El archivo elegido no es un backup válido (JSON inválido).', ()=>{}, {onlyOk:true}); return; }
+    if(!Array.isArray(parsed)){ showModal('El archivo elegido no tiene el formato esperado.', ()=>{}, {onlyOk:true}); return; }
+    showModal(`Esto va a REEMPLAZAR las ${fichas.length} fichas actuales por las ${parsed.length} del backup. ¿Continuar?`, ()=>{
+      fichas = parsed;
+      fichas.forEach(ensureCaracteristicasDetalladas);
+      fichas.forEach(f=>{ if(!f.codigo || !String(f.codigo).trim()) f.codigo = nextCodigo(); });
+      currentId = fichas.length ? fichas[0].id : null;
+      persist();
+      renderList();
+      renderForm();
+      updatePreview();
+    });
+  };
+  reader.readAsText(file);
+}
+
+/* ======================= AUTOSAVE ======================= */
+setInterval(()=>{
+  if(dirty){
+    dirty = false;
+    persist();
+  }
+}, 5000);
+
+window.addEventListener('beforeunload', (e)=>{
+  if(dirty){
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
+/* ======================= MODAL (confirm) ======================= */
+let modalOkCallback = null;
+function showModal(text, onOk, opts){
+  opts = opts || {};
+  document.getElementById('modalText').textContent = text;
+  document.getElementById('modalOk').textContent = opts.onlyOk ? 'Entendido' : 'Confirmar';
+  document.getElementById('modalCancel').style.display = opts.onlyOk ? 'none' : '';
+  modalOkCallback = onOk;
+  document.getElementById('modalBackdrop').classList.add('active');
+}
+function hideModal(){
+  document.getElementById('modalBackdrop').classList.remove('active');
+  modalOkCallback = null;
+}
+document.getElementById('modalOk').addEventListener('click', ()=>{
+  const cb = modalOkCallback;
+  hideModal();
+  if(cb) cb();
+});
+document.getElementById('modalCancel').addEventListener('click', hideModal);
+document.getElementById('modalBackdrop').addEventListener('click', (e)=>{
+  if(e.target.id==='modalBackdrop') hideModal();
+});
+
+/* ======================= FICHA CRUD (list interactions) ======================= */
+function seleccionarFicha(id){
+  if(dirty){ persist(); dirty = false; }
+  currentId = id;
+  localStorage.setItem(LAST_ID_KEY, id);
+  collapsedSections.clear();
+  renderList();
+  renderForm();
+  updatePreview();
+  goToTab('form');
+}
+
+function crearFicha(){
+  const f = nuevaFicha();
+  fichas.push(f);
+  currentId = f.id;
+  persist();
+  collapsedSections.clear();
+  renderList();
+  renderForm();
+  updatePreview();
+  goToTab('form');
+}
+
+function eliminarFicha(id){
+  const f = fichas.find(x=>x.id===id);
+  const nombre = f ? (f.titulo || 'esta ficha') : 'esta ficha';
+  showModal(`¿Eliminar "${nombre}"? Esta acción no se puede deshacer.`, ()=>{
+    fichas = fichas.filter(x=>x.id!==id);
+    if(currentId===id){ currentId = fichas.length ? fichas[0].id : null; }
+    persist();
+    renderList();
+    renderForm();
+    updatePreview();
+  });
+}
+
+document.getElementById('listaFichas').addEventListener('click', (e)=>{
+  const delBtn = e.target.closest('[data-delete-ficha]');
+  if(delBtn){ eliminarFicha(delBtn.getAttribute('data-delete-ficha')); return; }
+  const item = e.target.closest('[data-select-ficha]');
+  if(item){ seleccionarFicha(item.getAttribute('data-select-ficha')); }
+});
+
+document.getElementById('btnNueva').addEventListener('click', crearFicha);
+
+/* ======================= HEADER ACTIONS ======================= */
+document.getElementById('btnGuardar').addEventListener('click', ()=>{
+  dirty = false;
+  persist();
+});
+document.getElementById('btnDescargar').addEventListener('click', descargarFichaHTML);
+document.getElementById('btnExportar').addEventListener('click', exportarBackup);
+document.getElementById('btnImportar').addEventListener('click', ()=>{
+  document.getElementById('inputImportar').click();
+});
+document.getElementById('inputImportar').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(file) importarBackup(file);
+  e.target.value = '';
+});
+
+/* ======================= MOBILE TABS ======================= */
+function goToTab(name){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.getAttribute('data-tab')===name));
+  document.querySelectorAll('.col').forEach(c=>c.classList.toggle('active-tab', c.getAttribute('data-col')===name));
+}
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>goToTab(btn.getAttribute('data-tab')));
+});
+
+/* ======================= INIT ======================= */
+async function init(){
+  try{ await loadFichas(); }
+  catch(e){ fichas = []; currentId = null; }
+  renderList();
+  renderForm();
+  updatePreview();
+  setSaveIndicator('idle');
+}
+init();
+</script>
+</body>
+</html>
