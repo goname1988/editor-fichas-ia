@@ -208,6 +208,51 @@
   .modal-box button{ min-height:44px; padding:0 18px; border-radius:8px; cursor:pointer; font-weight:600; border:1px solid var(--gray); background:#fff; }
   .modal-box button.danger{ background:var(--err); color:#fff; border-color:var(--err); }
   .modal-box button.confirm{ background:var(--navy); color:#fff; border-color:var(--navy); }
+
+  /* --- Integración CRM + Netlify (secciones 15 y 16) --- */
+  .privacy-note{
+    background:#FFF9E6; border:1px solid #F5D073; color:#7A5A00;
+    padding:10px 12px; border-radius:8px; font-size:14px; margin-bottom:14px; line-height:1.4;
+  }
+  .propietario-picker{ display:flex; gap:8px; align-items:stretch; flex-wrap:wrap; }
+  .propietario-picker select{
+    flex:1 1 260px; min-height:44px; padding:0 12px; font-size:16px;
+    border:1px solid var(--gray); border-radius:8px; background:#fff;
+  }
+  .btn-add-inline{
+    min-height:44px; padding:0 14px; border:1px solid var(--navy); background:#fff; color:var(--navy);
+    border-radius:8px; font-weight:600; cursor:pointer; font-size:14px;
+  }
+  .btn-add-inline:hover{ background:var(--navy); color:#fff; }
+  .field-row{ display:flex; gap:12px; flex-wrap:wrap; }
+  .field-row .field{ flex:1 1 200px; }
+  .crm-warn{
+    background:#FDECEC; border:1px solid #E5A0A0; color:#8A1F1F;
+    padding:10px 12px; border-radius:8px; font-size:14px; margin:12px 0; line-height:1.4;
+  }
+  .crm-actions{ display:flex; align-items:center; gap:12px; margin-top:12px; }
+  .btn-crm{
+    min-height:44px; padding:0 22px; border:1px solid var(--navy); background:var(--navy); color:#fff;
+    border-radius:8px; font-weight:700; cursor:pointer; font-size:16px;
+  }
+  .btn-crm:hover:not([disabled]){ background:var(--blue); border-color:var(--blue); }
+  .btn-crm[disabled]{ opacity:0.5; cursor:not-allowed; background:var(--gray); border-color:var(--gray); }
+  .crm-spinner{ color:var(--blue); font-size:14px; font-weight:600; }
+  .crm-spinner.hidden{ display:none; }
+  .crm-badge{
+    margin-top:14px; padding:12px 14px; border-radius:8px; font-size:14px; line-height:1.5;
+    display:block;
+  }
+  .crm-badge.ok{ background:#E8F5E9; border:1px solid #81C784; color:#1B5E20; }
+  .crm-badge.err{ background:#FDECEC; border:1px solid #E5A0A0; color:#8A1F1F; }
+  .crm-badge a{ color:inherit; text-decoration:underline; word-break:break-all; }
+  .crm-hint{ display:block; font-size:13px; opacity:0.85; margin-top:4px; font-weight:normal; }
+  .btn-copy-url{
+    background:transparent; border:none; cursor:pointer; font-size:16px; padding:2px 6px;
+    vertical-align:middle;
+  }
+  .sub-hint{ font-size:13px; color:var(--blue); margin-top:4px; }
+  .sub-hint code{ background:#F0F3F6; padding:2px 6px; border-radius:4px; }
 </style>
 </head>
 <body>
@@ -257,6 +302,23 @@
 </div>
 
 <script>
+/* ======================= CONFIG API (CRM + Netlify) =======================
+   Endpoints externos que usa el editor. Cambiar acá si se rota el token
+   o se re-deploya el web app de Apps Script (la URL /exec cambia con cada
+   deploy NUEVO — pero al hacer "Manage deployments → editar existente → New
+   version" la URL se preserva).
+   El API_TOKEN va en el body de cada POST y se valida server-side contra
+   PropertiesService.getScriptProperties().getProperty('API_TOKEN'). Si se
+   filtra, se rota en Script Properties y acá.
+   La Netlify Function corre en el mismo dominio del editor, así que la URL
+   relativa /.netlify/functions/deploy funciona sin CORS.
+=========================================================================== */
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwsrzMreBFEALsiWvWfJcq1ITldZnibMlhiHz9R3tEyKuX9gtBFnyAOdXDbXZvqQ1LbJA/exec';
+const API_TOKEN = 'CAMBIAR_ESTO_POR_EL_TOKEN_REAL';  // rotarlo en Script Properties + acá
+const NETLIFY_DEPLOY_FN = '/.netlify/functions/deploy';
+const PROPIETARIOS_CACHE_KEY = 'ia_propietarios_cache';
+const PROPIETARIOS_CACHE_TTL_MS = 5 * 60 * 1000;  // 5 minutos
+
 /* ======================= STATE & STORAGE ======================= */
 // Las fichas (con fotos) se guardan en IndexedDB, que aguanta cientos de MB
 // (localStorage solo ~5MB, se llenaba con pocas fotos). Las claves chicas
@@ -459,13 +521,48 @@ function nuevaFicha(){
     fotos: [],
     videoUrl: '',
     referenciaMapa: '',
-    mapLat: null, mapLng: null
+    mapLat: null, mapLng: null,
+    // Propietario (datos privados — NUNCA se muestran en la ficha pública)
+    propietario: { nombre:'', tel:'', email:'', ownerId:'' },
+    // Estado CRM (se completa al apretar "Enviar al CRM")
+    crmEnviado: false,
+    crmPropId: '',
+    crmEnviadoAt: 0,
+    crmError: '',
+    // Estado Netlify (se completa al apretar "Publicar en Netlify")
+    netlifyPublicado: false,
+    netlifyUrl: '',
+    netlifySubdominio: '',
+    netlifyPublicadoAt: 0,
+    netlifyError: ''
   };
+}
+
+// Backwards-compat: agregar campos nuevos a fichas viejas cargadas de IDB
+function ensurePropietarioYEstados(f){
+  if(!f.propietario || typeof f.propietario!=='object'){
+    f.propietario = { nombre:'', tel:'', email:'', ownerId:'' };
+  } else {
+    if(f.propietario.nombre==null) f.propietario.nombre = '';
+    if(f.propietario.tel==null) f.propietario.tel = '';
+    if(f.propietario.email==null) f.propietario.email = '';
+    if(f.propietario.ownerId==null) f.propietario.ownerId = '';
+  }
+  if(f.crmEnviado==null) f.crmEnviado = false;
+  if(f.crmPropId==null) f.crmPropId = '';
+  if(f.crmEnviadoAt==null) f.crmEnviadoAt = 0;
+  if(f.crmError==null) f.crmError = '';
+  if(f.netlifyPublicado==null) f.netlifyPublicado = false;
+  if(f.netlifyUrl==null) f.netlifyUrl = '';
+  if(f.netlifySubdominio==null) f.netlifySubdominio = '';
+  if(f.netlifyPublicadoAt==null) f.netlifyPublicadoAt = 0;
+  if(f.netlifyError==null) f.netlifyError = '';
 }
 
 async function loadFichas(){
   fichas = await cargarFichasStorage();
   fichas.forEach(ensureCaracteristicasDetalladas);
+  fichas.forEach(ensurePropietarioYEstados);
   // Fichas viejas sin código: se les asigna uno automático y se persiste una
   // sola vez (si no se persistiera, cambiaría en cada apertura).
   let codigoAsignado = false;
@@ -1022,7 +1119,122 @@ function buildFormHTML(f){
       <input type="text" id="fCodigo" data-field="codigo" placeholder="IA-0001" value="${escAttr(f.codigo)}">
     </div>`);
 
+  // 15. Datos del propietario (privado) + Enviar al CRM
+  html += sectionWrap('propietario','15. Datos del propietario (privado) — Enviar al CRM', buildSeccionPropietario(f));
+
+  // 16. Publicar online (Netlify)
+  html += sectionWrap('publicar','16. Publicar online (Netlify)', buildSeccionPublicar(f));
+
   return html;
+}
+
+/* ---------- Sección 15: propietario + botón CRM ---------- */
+function buildSeccionPropietario(f){
+  const faltan = camposFaltantesParaCRM(f);
+  const canSend = faltan.length === 0;
+  const p = f.propietario;
+  // Estado del envío CRM
+  let crmStatus = '';
+  if(f.crmEnviado && f.crmPropId){
+    crmStatus = `<div class="crm-badge ok">✓ En CRM — <strong>${escHtml(f.crmPropId)}</strong>
+      <span class="crm-hint">La propiedad quedó cargada como Disponible. Reenviar sobrescribiría — no reenviar sin motivo.</span></div>`;
+  } else if(f.crmError){
+    crmStatus = `<div class="crm-badge err">✗ Error: ${escHtml(f.crmError)}</div>`;
+  }
+  // Faltantes visibles
+  let faltantesBlock = '';
+  if(!canSend){
+    faltantesBlock = `<div class="crm-warn">
+      <strong>No se puede enviar todavía.</strong> Faltan: ${faltan.map(escHtml).join(', ')}.
+    </div>`;
+  }
+  return `
+    <div class="privacy-note">
+      🔒 <strong>Estos datos NO salen en la ficha pública.</strong> Se usan sólo para cargar la propiedad en el CRM y vincularla al dueño.
+    </div>
+
+    <div class="field">
+      <label>Propietario ${tip('Elegí uno existente para reusar el teléfono y mail sin retipearlos. Si el dueño es nuevo, dale a "+ Nuevo propietario".')}</label>
+      <div class="propietario-picker">
+        <select id="propietarioSelect">
+          <option value="__loading__">Cargando propietarios…</option>
+        </select>
+        <button type="button" id="btnNuevoPropietario" class="btn-add-inline">+ Nuevo</button>
+        <button type="button" id="btnRefrescarPropietarios" class="btn-add-inline" title="Refrescar la lista desde el CRM">↻</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="fPropNombre">Nombre del propietario *</label>
+      <input type="text" id="fPropNombre" value="${escAttr(p.nombre)}" placeholder="Ej: Juan Pérez">
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label for="fPropTel">Teléfono</label>
+        <input type="text" id="fPropTel" value="${escAttr(p.tel)}" placeholder="099 123 456" inputmode="tel">
+      </div>
+      <div class="field">
+        <label for="fPropEmail">Email</label>
+        <input type="email" id="fPropEmail" value="${escAttr(p.email)}" placeholder="juan@ejemplo.com">
+      </div>
+    </div>
+
+    ${faltantesBlock}
+
+    <div class="crm-actions">
+      <button type="button" id="btnEnviarCRM" class="btn-crm" ${canSend?'':'disabled'}>
+        ${f.crmEnviado ? 'Reenviar al CRM' : 'Enviar al CRM'}
+      </button>
+      <span id="crmSpinner" class="crm-spinner hidden">Enviando…</span>
+    </div>
+
+    ${crmStatus}
+  `;
+}
+
+/* ---------- Sección 16: publicar en Netlify ---------- */
+function buildSeccionPublicar(f){
+  const motivos = motivosNoPublicarNetlify(f);
+  const canPublish = motivos.length === 0;
+  const subdominio = f.netlifySubdominio || netlifySubdominioSugerido(f);
+  let motivosBlock = '';
+  if(!canPublish){
+    motivosBlock = `<div class="crm-warn">
+      <strong>No se puede publicar todavía.</strong>
+      <ul style="margin:6px 0 0 18px;padding:0;">
+        ${motivos.map(m=>`<li>${escHtml(m)}</li>`).join('')}
+      </ul>
+    </div>`;
+  }
+  let netlifyStatus = '';
+  if(f.netlifyPublicado && f.netlifyUrl){
+    netlifyStatus = `<div class="crm-badge ok">✓ Publicado —
+      <a href="${escAttr(f.netlifyUrl)}" target="_blank" rel="noopener noreferrer">${escHtml(f.netlifyUrl)}</a>
+      <button type="button" id="btnCopiarUrlNetlify" class="btn-copy-url" title="Copiar URL">📋</button>
+      <span class="crm-hint">El link ya quedó guardado en el CRM automáticamente.</span>
+    </div>`;
+  } else if(f.netlifyError){
+    netlifyStatus = `<div class="crm-badge err">✗ Error: ${escHtml(f.netlifyError)}</div>`;
+  }
+  return `
+    <div class="field">
+      <label for="fNetlifySubdominio">Nombre del sitio en Netlify (subdominio) ${tip('El cliente va a ver esta URL: {nombre}.netlify.app. Sólo minúsculas, números y guiones. Ej: venta-cordon-ia-0042.')}</label>
+      <input type="text" id="fNetlifySubdominio" value="${escAttr(subdominio)}" placeholder="venta-cordon-ia-0042"
+             pattern="[a-z0-9][a-z0-9\\-]{1,61}[a-z0-9]" ${canPublish?'':'disabled'}>
+      <div class="sub-hint">URL final: <code>https://<span id="netlifyUrlPreview">${escHtml(subdominio)}</span>.netlify.app</code></div>
+    </div>
+
+    ${motivosBlock}
+
+    <div class="crm-actions">
+      <button type="button" id="btnPublicarNetlify" class="btn-crm" ${canPublish?'':'disabled'}>
+        ${f.netlifyPublicado ? 'Republicar (sobrescribe)' : 'Publicar en Netlify'}
+      </button>
+      <span id="netlifySpinner" class="crm-spinner hidden">Publicando…</span>
+    </div>
+
+    ${netlifyStatus}
+  `;
 }
 
 function escHtml(s){ return (s==null?'':String(s)).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
@@ -1295,7 +1507,195 @@ function bindFormEvents(f){
     });
   });
 
+  // Bindings para las secciones nuevas (15: propietario/CRM, 16: publicar Netlify)
+  bindPropietarioYPublicar(f, container);
+
   updateMapPreview(f);
+}
+
+/**
+ * Bindings de las secciones 15 (propietario + CRM) y 16 (publicar Netlify).
+ * Se llama desde bindFormEvents cada vez que se renderiza el form.
+ */
+function bindPropietarioYPublicar(f, container){
+  // --- Campos del propietario (inputs de texto) ---
+  const inpNombre = document.getElementById('fPropNombre');
+  const inpTel = document.getElementById('fPropTel');
+  const inpEmail = document.getElementById('fPropEmail');
+  const onPropInput = ()=>{
+    f.propietario.nombre = inpNombre ? inpNombre.value : '';
+    f.propietario.tel = inpTel ? inpTel.value : '';
+    f.propietario.email = inpEmail ? inpEmail.value : '';
+    // Si el usuario tipea, deja de ser un "seleccionado del dropdown"
+    if(document.activeElement === inpNombre) f.propietario.ownerId = '';
+    onFichaChanged();
+    // Re-evaluar si el botón CRM cambia de disabled a habilitado
+    actualizarBotonCRMEstado(f);
+  };
+  if(inpNombre) inpNombre.addEventListener('input', onPropInput);
+  if(inpTel) inpTel.addEventListener('input', onPropInput);
+  if(inpEmail) inpEmail.addEventListener('input', onPropInput);
+
+  // --- Dropdown de propietarios existentes ---
+  const sel = document.getElementById('propietarioSelect');
+  if(sel){
+    // Populación async
+    poblarDropdownPropietarios(sel, f);
+    sel.addEventListener('change', ()=>{
+      const val = sel.value;
+      if(val === '__nuevo__' || val === '__loading__' || val === ''){
+        return;
+      }
+      // val = ownerId. Buscar el propietario en el cache y autofill.
+      const cache = leerCachePropietarios();
+      const p = cache.find(x=>x.ownerId===val || x.nombre===val);
+      if(p){
+        f.propietario.nombre = p.nombre || '';
+        f.propietario.tel = p.tel || '';
+        f.propietario.email = p.email || '';
+        f.propietario.ownerId = p.ownerId || '';
+        if(inpNombre) inpNombre.value = f.propietario.nombre;
+        if(inpTel) inpTel.value = f.propietario.tel;
+        if(inpEmail) inpEmail.value = f.propietario.email;
+        onFichaChanged();
+        actualizarBotonCRMEstado(f);
+      }
+    });
+  }
+  const btnNuevo = document.getElementById('btnNuevoPropietario');
+  if(btnNuevo) btnNuevo.addEventListener('click', ()=>{
+    if(sel) sel.value = '__nuevo__';
+    f.propietario.nombre = '';
+    f.propietario.tel = '';
+    f.propietario.email = '';
+    f.propietario.ownerId = '';
+    if(inpNombre){ inpNombre.value = ''; inpNombre.focus(); }
+    if(inpTel) inpTel.value = '';
+    if(inpEmail) inpEmail.value = '';
+    onFichaChanged();
+    actualizarBotonCRMEstado(f);
+  });
+  const btnRefresh = document.getElementById('btnRefrescarPropietarios');
+  if(btnRefresh) btnRefresh.addEventListener('click', async ()=>{
+    invalidarCachePropietarios();
+    if(sel){
+      sel.innerHTML = '<option value="__loading__">Refrescando…</option>';
+      await poblarDropdownPropietarios(sel, f);
+    }
+  });
+
+  // --- Botón Enviar al CRM ---
+  const btnCRM = document.getElementById('btnEnviarCRM');
+  const crmSpin = document.getElementById('crmSpinner');
+  if(btnCRM) btnCRM.addEventListener('click', async ()=>{
+    if(btnCRM.disabled) return;
+    btnCRM.disabled = true;
+    if(crmSpin) crmSpin.classList.remove('hidden');
+    try{
+      await enviarAlCRM(f);
+      renderForm();
+      renderList();
+    }catch(e){
+      f.crmError = e.message || String(e);
+      persist();
+      renderForm();
+    }finally{
+      if(crmSpin) crmSpin.classList.add('hidden');
+    }
+  });
+
+  // --- Sección 16: publicar en Netlify ---
+  const inpSubdominio = document.getElementById('fNetlifySubdominio');
+  const preview = document.getElementById('netlifyUrlPreview');
+  if(inpSubdominio && preview){
+    inpSubdominio.addEventListener('input', ()=>{
+      // Limpiar en vivo a caracteres válidos (minúsculas, dígitos, guiones)
+      const clean = inpSubdominio.value.toLowerCase().replace(/[^a-z0-9-]/g,'').slice(0,63);
+      if(clean !== inpSubdominio.value) inpSubdominio.value = clean;
+      preview.textContent = clean || '(nombre-vacío)';
+    });
+  }
+  const btnPub = document.getElementById('btnPublicarNetlify');
+  const netSpin = document.getElementById('netlifySpinner');
+  if(btnPub) btnPub.addEventListener('click', async ()=>{
+    if(btnPub.disabled) return;
+    const subdominio = inpSubdominio ? inpSubdominio.value.trim() : netlifySubdominioSugerido(f);
+    btnPub.disabled = true;
+    if(netSpin) netSpin.classList.remove('hidden');
+    try{
+      await publicarEnNetlify(f, subdominio);
+      renderForm();
+      renderList();
+    }catch(e){
+      f.netlifyError = e.message || String(e);
+      persist();
+      renderForm();
+    }finally{
+      if(netSpin) netSpin.classList.add('hidden');
+    }
+  });
+  const btnCopy = document.getElementById('btnCopiarUrlNetlify');
+  if(btnCopy) btnCopy.addEventListener('click', async ()=>{
+    if(!f.netlifyUrl) return;
+    try{
+      await navigator.clipboard.writeText(f.netlifyUrl);
+      btnCopy.textContent = '✓';
+      setTimeout(()=>{ btnCopy.textContent = '📋'; }, 1500);
+    }catch(e){
+      // Fallback: seleccionar el link
+      showModal('No pude copiar automáticamente. La URL es: '+f.netlifyUrl, ()=>{}, {onlyOk:true});
+    }
+  });
+}
+
+/**
+ * Habilita/deshabilita el botón CRM sin re-renderizar todo el form
+ * (más ágil mientras el usuario tipea).
+ */
+function actualizarBotonCRMEstado(f){
+  const btn = document.getElementById('btnEnviarCRM');
+  if(!btn) return;
+  const faltan = camposFaltantesParaCRM(f);
+  btn.disabled = faltan.length > 0;
+}
+
+/**
+ * Puebla el <select> de propietarios haciendo fetch a listarPropietarios
+ * (cacheado 5 min). Deja seleccionado el propietario actual de la ficha
+ * si existe.
+ */
+async function poblarDropdownPropietarios(sel, f){
+  let lista;
+  try{
+    lista = await cargarPropietarios(false);
+  }catch(e){
+    sel.innerHTML = `<option value="">— No se pudieron cargar (${escHtml(e.message)}) —</option>
+      <option value="__nuevo__">+ Cargar propietario manualmente</option>`;
+    return;
+  }
+  const opts = ['<option value="">— Elegí un propietario —</option>'];
+  opts.push('<option value="__nuevo__">+ Nuevo propietario</option>');
+  lista.forEach(p=>{
+    const label = [p.nombre, p.tel].filter(Boolean).join(' — ');
+    const val = p.ownerId || p.nombre;
+    opts.push(`<option value="${escAttr(val)}">${escHtml(label)}</option>`);
+  });
+  sel.innerHTML = opts.join('');
+  // Si la ficha ya tiene un propietario elegido, marcarlo
+  const currentVal = f.propietario.ownerId || f.propietario.nombre;
+  if(currentVal){
+    const match = lista.find(p => (p.ownerId||p.nombre) === currentVal);
+    if(match) sel.value = match.ownerId || match.nombre;
+  }
+}
+
+function leerCachePropietarios(){
+  try{
+    const raw = localStorage.getItem(PROPIETARIOS_CACHE_KEY);
+    if(!raw) return [];
+    const cached = JSON.parse(raw);
+    return (cached && Array.isArray(cached.propietarios)) ? cached.propietarios : [];
+  }catch(e){ return []; }
 }
 
 function updateMapPreview(f){
@@ -1869,6 +2269,235 @@ function descargarFichaHTML(){
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+/* ======================= CRM + NETLIFY INTEGRATION =======================
+   Hooks para enviar la propiedad al CRM (Google Sheet via Apps Script web
+   app) y para publicarla online en Netlify (Netlify Function con token
+   guardado server-side). Ver plan en .claude/plans/contexto-proyecto-*.md
+=========================================================================== */
+
+/**
+ * Helper: POST al web app del Apps Script.
+ * Content-Type text/plain evita el preflight CORS de Apps Script.
+ * Retorna la respuesta ya parseada como JSON o lanza Error con mensaje útil.
+ */
+async function crmFetch(action, data){
+  const body = JSON.stringify({ token: API_TOKEN, action, data: data||{} });
+  let res;
+  try{
+    res = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body,
+      redirect: 'follow'
+    });
+  }catch(e){
+    throw new Error('Sin conexión con el CRM. Verificá internet o reintentá en unos segundos.');
+  }
+  const text = await res.text();
+  let json;
+  try{ json = JSON.parse(text); }
+  catch(e){ throw new Error('Respuesta inesperada del CRM: '+ text.slice(0,200)); }
+  if(!res.ok || json.ok===false){
+    throw new Error(json.error || ('Error del CRM (status '+res.status+')'));
+  }
+  return json;
+}
+
+/**
+ * Devuelve la lista de propietarios (cache 5 min en localStorage).
+ * Cada propietario: { nombre, tel, email, ownerId }
+ * forceRefresh=true ignora el cache (ej: después de crear uno nuevo).
+ */
+async function cargarPropietarios(forceRefresh){
+  const now = Date.now();
+  if(!forceRefresh){
+    try{
+      const raw = localStorage.getItem(PROPIETARIOS_CACHE_KEY);
+      if(raw){
+        const cached = JSON.parse(raw);
+        if(cached && cached.ts && (now - cached.ts) < PROPIETARIOS_CACHE_TTL_MS){
+          return cached.propietarios || [];
+        }
+      }
+    }catch(e){}
+  }
+  const resp = await crmFetch('listarPropietarios');
+  const lista = Array.isArray(resp.propietarios) ? resp.propietarios : [];
+  try{
+    localStorage.setItem(PROPIETARIOS_CACHE_KEY, JSON.stringify({ ts:now, propietarios:lista }));
+  }catch(e){}
+  return lista;
+}
+
+function invalidarCachePropietarios(){
+  try{ localStorage.removeItem(PROPIETARIOS_CACHE_KEY); }catch(e){}
+}
+
+/**
+ * Devuelve los campos que faltan para poder enviar al CRM.
+ * Si el array está vacío, se puede enviar.
+ */
+function camposFaltantesParaCRM(f){
+  const faltan = [];
+  if(!f.titulo || !String(f.titulo).trim()) faltan.push('Título');
+  if(!f.precio || !String(f.precio).trim()) faltan.push('Precio');
+  if(!f.barrio || !String(f.barrio).trim()) faltan.push('Barrio');
+  if(!f.operacion) faltan.push('Operación');
+  if(!f.tipoPropiedad) faltan.push('Tipo de propiedad');
+  if(!f.propietario || !f.propietario.nombre || !String(f.propietario.nombre).trim()){
+    faltan.push('Propietario (nombre)');
+  }
+  return faltan;
+}
+
+/**
+ * Devuelve los motivos por los que NO se puede publicar en Netlify.
+ * Array vacío = se puede publicar.
+ */
+function motivosNoPublicarNetlify(f){
+  const motivos = [];
+  if(!f.crmEnviado || !f.crmPropId){
+    motivos.push('Primero enviá al CRM (el subdominio se arma con el ID del CRM para evitar duplicados)');
+  }
+  if(!f.titulo || !String(f.titulo).trim()) motivos.push('Falta título');
+  if(!f.fotos || !f.fotos.length) motivos.push('Falta al menos 1 foto');
+  return motivos;
+}
+
+/**
+ * Mapea el state de la ficha al formato que espera apiCrearPropiedad(d) del
+ * Apps Script. Ver Código.js línea 5044.
+ */
+function fichaToCrmPayload(f){
+  const tipo = (f.operacion === 'alquiler') ? 'Alquiler' : 'Venta';
+  const cap = s => s ? (s.charAt(0).toUpperCase() + s.slice(1)) : '';
+  const tipoInmueble = cap(f.tipoPropiedad);  // 'Apartamento' | 'Casa' | 'Local'
+  const precioNum = String(f.precio||'').replace(/[^\d]/g,'');
+  const precioUYU = (f.moneda === 'UYU') ? precioNum : '';
+  const precioUSD = (f.moneda === 'USD' || f.moneda === 'USD + saldo ANV') ? precioNum : '';
+  const garantiasStr = (Array.isArray(f.garantias) && f.garantias.length)
+    ? f.garantias.join(', ') : '';
+  return {
+    tipo,
+    tipoInmueble,
+    barrio: (f.barrio||'').trim(),
+    direccion: '',                 // el editor no captura dirección exacta (privacy)
+    dorm: f.dormitorios || '',
+    m2: f.metraje || '',
+    propietario: (f.propietario.nombre||'').trim(),
+    telPropietario: (f.propietario.tel||'').trim(),
+    emailPropietario: (f.propietario.email||'').trim(),
+    precioUYU,
+    precioUSD,
+    garantias: garantiasStr,
+    formasPago: '',
+    banco: '',
+    link: f.netlifyUrl || ''       // si aún no se publicó en Netlify, va vacío
+  };
+}
+
+/**
+ * Envía la propiedad al CRM. Actualiza f.crmEnviado, f.crmPropId, persist.
+ */
+async function enviarAlCRM(f){
+  const faltan = camposFaltantesParaCRM(f);
+  if(faltan.length){
+    throw new Error('Faltan: ' + faltan.join(', '));
+  }
+  const payload = fichaToCrmPayload(f);
+  const resp = await crmFetch('crearPropiedad', payload);
+  if(!resp.propId){
+    throw new Error('El CRM no devolvió Prop_ID. Respuesta: '+ JSON.stringify(resp).slice(0,200));
+  }
+  f.crmEnviado = true;
+  f.crmPropId = resp.propId;
+  f.crmEnviadoAt = Date.now();
+  f.crmError = '';
+  // Invalidar cache de propietarios por si acabamos de crear uno nuevo
+  invalidarCachePropietarios();
+  f.updatedAt = Date.now();
+  persist();
+  return resp;
+}
+
+/**
+ * Construye el subdominio sugerido para Netlify. Usa el propId del CRM (único
+ * server-side) NO el código local del editor (que puede chocar entre PCs).
+ */
+function netlifySubdominioSugerido(f){
+  const opLabels = { venta:'venta', alquiler:'alquiler', renta:'venta-renta' };
+  const op = slugify(opLabels[f.operacion] || 'ficha');
+  const barrio = slugify(f.barrio) || 'propiedad';
+  const id = slugify(f.crmPropId || f.codigo || '');
+  return [op, barrio, id].filter(Boolean).join('-').toLowerCase();
+}
+
+/**
+ * Encode Uint8Array → base64 en chunks (evita "Maximum call stack" con arrays grandes).
+ */
+function bytesToBase64(bytes){
+  const CHUNK = 0x8000;
+  let bin = '';
+  for(let i=0; i<bytes.length; i+=CHUNK){
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i+CHUNK));
+  }
+  return btoa(bin);
+}
+
+/**
+ * Publica la ficha en Netlify. Actualiza f.netlifyUrl, persist, y actualiza
+ * el link en el CRM si la propiedad ya fue enviada.
+ */
+async function publicarEnNetlify(f, subdominio){
+  const motivos = motivosNoPublicarNetlify(f);
+  if(motivos.length){
+    throw new Error('No se puede publicar. ' + motivos.join('. ') + '.');
+  }
+  const name = String(subdominio||'').trim().toLowerCase();
+  if(!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(name)){
+    throw new Error('Nombre inválido. Solo minúsculas, números y guiones, entre 3 y 63 caracteres.');
+  }
+  const html = generarFichaHTML(f);
+  const htmlBytes = new TextEncoder().encode(html);
+  const zipBytes = buildZipSingleFile('index.html', htmlBytes);
+  const zipBase64 = bytesToBase64(zipBytes);
+  let res;
+  try{
+    res = await fetch(NETLIFY_DEPLOY_FN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, zipBase64 })
+    });
+  }catch(e){
+    throw new Error('Sin conexión con la función de deploy. Verificá internet.');
+  }
+  const text = await res.text();
+  let json;
+  try{ json = JSON.parse(text); }
+  catch(e){ throw new Error('Respuesta inesperada de Netlify: '+ text.slice(0,200)); }
+  if(!res.ok){
+    throw new Error(json.error || ('Error de Netlify (status '+res.status+')'));
+  }
+  f.netlifyPublicado = true;
+  f.netlifyUrl = json.url;
+  f.netlifySubdominio = name;
+  f.netlifyPublicadoAt = Date.now();
+  f.netlifyError = '';
+  f.updatedAt = Date.now();
+  persist();
+  // Actualizar el link en el CRM (best-effort; si falla no bloquea la publicación)
+  if(f.crmPropId){
+    try{
+      await crmFetch('actualizarLinkPropiedad', { propId: f.crmPropId, link: json.url });
+    }catch(e){
+      // guardar el error pero no re-throwar — la publicación en Netlify sí salió
+      f.crmError = 'Se publicó en Netlify pero no se pudo actualizar el link en el CRM: '+ e.message;
+      persist();
+    }
+  }
+  return json;
 }
 
 /* ======================= BACKUP EXPORT / IMPORT ======================= */
