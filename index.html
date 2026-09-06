@@ -528,6 +528,7 @@ function nuevaFicha(){
     crmEnviado: false,
     crmPropId: '',
     crmEnviadoAt: 0,
+    crmActualizadoAt: 0,  // se actualiza cada vez que se hace "Actualizar en CRM"
     crmError: '',
     // Estado Netlify (se completa al apretar "Publicar en Netlify")
     netlifyPublicado: false,
@@ -551,6 +552,7 @@ function ensurePropietarioYEstados(f){
   if(f.crmEnviado==null) f.crmEnviado = false;
   if(f.crmPropId==null) f.crmPropId = '';
   if(f.crmEnviadoAt==null) f.crmEnviadoAt = 0;
+  if(f.crmActualizadoAt==null) f.crmActualizadoAt = 0;
   if(f.crmError==null) f.crmError = '';
   if(f.netlifyPublicado==null) f.netlifyPublicado = false;
   if(f.netlifyUrl==null) f.netlifyUrl = '';
@@ -1133,21 +1135,22 @@ function buildSeccionPropietario(f){
   const faltan = camposFaltantesParaCRM(f);
   const canSend = faltan.length === 0;
   const p = f.propietario;
-  // Estado del envío CRM
+  const yaEnCRM = !!(f.crmEnviado && f.crmPropId);
+  // Estado del envío CRM (badge OK / err)
   let crmStatus = '';
-  if(f.crmEnviado && f.crmPropId){
-    crmStatus = `<div class="crm-badge ok">✓ En CRM — <strong>${escHtml(f.crmPropId)}</strong>
-      <span class="crm-hint">La propiedad quedó cargada como Disponible. Reenviar sobrescribiría — no reenviar sin motivo.</span></div>`;
+  if(yaEnCRM){
+    const actualizadoTxt = f.crmActualizadoAt ? ` <span style="opacity:0.75;">· Actualizado ${_fechaCortaCRM(f.crmActualizadoAt)}</span>` : '';
+    crmStatus = `<div class="crm-badge ok" id="crmStatusBadge">✓ En CRM — <strong>${escHtml(f.crmPropId)}</strong>${actualizadoTxt}
+      <span class="crm-hint">Podés actualizar cuando cambies precio, dormitorios, barrio o cualquier campo — se refleja en la MISMA fila del CRM (no crea duplicado).</span></div>`;
   } else if(f.crmError){
-    crmStatus = `<div class="crm-badge err">✗ Error: ${escHtml(f.crmError)}</div>`;
+    crmStatus = `<div class="crm-badge err" id="crmStatusBadge">✗ Error: ${escHtml(f.crmError)}</div>`;
   }
-  // Faltantes visibles
-  let faltantesBlock = '';
-  if(!canSend){
-    faltantesBlock = `<div class="crm-warn">
-      <strong>No se puede enviar todavía.</strong> Faltan: ${faltan.map(escHtml).join(', ')}.
-    </div>`;
-  }
+  // Faltantes visibles (SIEMPRE renderizado, con display:none si no hay faltantes,
+  // para que actualizarBotonCRMEstado pueda updatearlo en vivo sin recrear el DOM)
+  const faltantesTexto = canSend
+    ? ''
+    : `<strong>No se puede enviar todavía.</strong> Faltan: ${faltan.map(escHtml).join(', ')}.`;
+  const faltantesStyle = canSend ? 'display:none;' : '';
   return `
     <div class="privacy-note">
       🔒 <strong>Estos datos NO salen en la ficha pública.</strong> Se usan sólo para cargar la propiedad en el CRM y vincularla al dueño.
@@ -1179,17 +1182,29 @@ function buildSeccionPropietario(f){
       </div>
     </div>
 
-    ${faltantesBlock}
+    <div class="crm-warn" id="crmFaltantesCartel" style="${faltantesStyle}">${faltantesTexto}</div>
 
     <div class="crm-actions">
       <button type="button" id="btnEnviarCRM" class="btn-crm" ${canSend?'':'disabled'}>
-        ${f.crmEnviado ? 'Reenviar al CRM' : 'Enviar al CRM'}
+        ${yaEnCRM ? 'Actualizar en CRM' : 'Enviar al CRM'}
       </button>
-      <span id="crmSpinner" class="crm-spinner hidden">Enviando…</span>
+      <span id="crmSpinner" class="crm-spinner hidden">${yaEnCRM ? 'Actualizando…' : 'Enviando…'}</span>
     </div>
 
     ${crmStatus}
   `;
+}
+
+/**
+ * Devuelve "dd/mm HH:MM" a partir de un timestamp Date.now().
+ * Usado en el badge "Actualizado ..." de sección 15.
+ */
+function _fechaCortaCRM(ts){
+  try{
+    const d = new Date(ts);
+    const pad = n => String(n).padStart(2,'0');
+    return `${pad(d.getDate())}/${pad(d.getMonth()+1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }catch(e){ return ''; }
 }
 
 /* ---------- Sección 16: publicar en Netlify ---------- */
@@ -1197,24 +1212,23 @@ function buildSeccionPublicar(f){
   const motivos = motivosNoPublicarNetlify(f);
   const canPublish = motivos.length === 0;
   const subdominio = f.netlifySubdominio || netlifySubdominioSugerido(f);
-  let motivosBlock = '';
-  if(!canPublish){
-    motivosBlock = `<div class="crm-warn">
-      <strong>No se puede publicar todavía.</strong>
-      <ul style="margin:6px 0 0 18px;padding:0;">
-        ${motivos.map(m=>`<li>${escHtml(m)}</li>`).join('')}
-      </ul>
-    </div>`;
-  }
+  // Motivos SIEMPRE en el DOM (con display:none si vacío) para poder actualizar en vivo
+  const motivosHTML = canPublish
+    ? ''
+    : `<strong>No se puede publicar todavía.</strong>
+       <ul style="margin:6px 0 0 18px;padding:0;">
+         ${motivos.map(m=>`<li>${escHtml(m)}</li>`).join('')}
+       </ul>`;
+  const motivosStyle = canPublish ? 'display:none;' : '';
   let netlifyStatus = '';
   if(f.netlifyPublicado && f.netlifyUrl){
-    netlifyStatus = `<div class="crm-badge ok">✓ Publicado —
+    netlifyStatus = `<div class="crm-badge ok" id="netlifyStatusBadge">✓ Publicado —
       <a href="${escAttr(f.netlifyUrl)}" target="_blank" rel="noopener noreferrer">${escHtml(f.netlifyUrl)}</a>
       <button type="button" id="btnCopiarUrlNetlify" class="btn-copy-url" title="Copiar URL">📋</button>
       <span class="crm-hint">El link ya quedó guardado en el CRM automáticamente.</span>
     </div>`;
   } else if(f.netlifyError){
-    netlifyStatus = `<div class="crm-badge err">✗ Error: ${escHtml(f.netlifyError)}</div>`;
+    netlifyStatus = `<div class="crm-badge err" id="netlifyStatusBadge">✗ Error: ${escHtml(f.netlifyError)}</div>`;
   }
   return `
     <div class="field">
@@ -1224,7 +1238,7 @@ function buildSeccionPublicar(f){
       <div class="sub-hint">URL final: <code>https://<span id="netlifyUrlPreview">${escHtml(subdominio)}</span>.netlify.app</code></div>
     </div>
 
-    ${motivosBlock}
+    <div class="crm-warn" id="netlifyMotivosCartel" style="${motivosStyle}">${motivosHTML}</div>
 
     <div class="crm-actions">
       <button type="button" id="btnPublicarNetlify" class="btn-crm" ${canPublish?'':'disabled'}>
@@ -1649,14 +1663,94 @@ function bindPropietarioYPublicar(f, container){
 }
 
 /**
- * Habilita/deshabilita el botón CRM sin re-renderizar todo el form
- * (más ágil mientras el usuario tipea).
+ * Actualiza en vivo (sin renderForm completo) el estado visual de las
+ * secciones 15 (Enviar/Actualizar CRM) y 16 (Publicar Netlify) cuando
+ * el usuario tipea/cambia campos. Toca:
+ *   - Cartel rojo de faltantes CRM (sección 15)
+ *   - Cartel rojo de motivos Netlify (sección 16)
+ *   - Botón "Enviar/Actualizar en CRM" (disabled + label)
+ *   - Botón "Publicar en Netlify" (disabled)
+ *   - Subdominio sugerido (si aún no fue publicado y cambiaron los inputs
+ *     que lo componen: operación, barrio, propId)
+ *
+ * NO llama renderForm() — se ejecuta en cada keypress y perder foco sería feo.
+ * El nombre se mantiene por retro-compatibilidad con los 3 callers en
+ * bindPropietarioYPublicar (línea ~1533, 1561, 1576).
  */
 function actualizarBotonCRMEstado(f){
-  const btn = document.getElementById('btnEnviarCRM');
-  if(!btn) return;
+  // --- Sección 15: cartel faltantes + botón Enviar/Actualizar ---
   const faltan = camposFaltantesParaCRM(f);
-  btn.disabled = faltan.length > 0;
+  const canSendCRM = faltan.length === 0;
+  const cartelCRM = document.getElementById('crmFaltantesCartel');
+  if(cartelCRM){
+    if(canSendCRM){
+      cartelCRM.style.display = 'none';
+      cartelCRM.innerHTML = '';
+    } else {
+      cartelCRM.style.display = '';
+      cartelCRM.innerHTML = `<strong>No se puede enviar todavía.</strong> Faltan: ${faltan.map(escHtml).join(', ')}.`;
+    }
+  }
+  const btnCRM = document.getElementById('btnEnviarCRM');
+  if(btnCRM){
+    btnCRM.disabled = !canSendCRM;
+    // Label refleja el estado — si ya está en CRM, el botón actualiza
+    const yaEnCRM = !!(f.crmEnviado && f.crmPropId);
+    btnCRM.textContent = yaEnCRM ? 'Actualizar en CRM' : 'Enviar al CRM';
+  }
+  const spinCRM = document.getElementById('crmSpinner');
+  if(spinCRM){
+    const yaEnCRM = !!(f.crmEnviado && f.crmPropId);
+    spinCRM.textContent = yaEnCRM ? 'Actualizando…' : 'Enviando…';
+  }
+
+  // --- Sección 16: cartel motivos + botón Publicar ---
+  const motivos = motivosNoPublicarNetlify(f);
+  const canPublish = motivos.length === 0;
+  const cartelNetlify = document.getElementById('netlifyMotivosCartel');
+  if(cartelNetlify){
+    if(canPublish){
+      cartelNetlify.style.display = 'none';
+      cartelNetlify.innerHTML = '';
+    } else {
+      cartelNetlify.style.display = '';
+      cartelNetlify.innerHTML = `<strong>No se puede publicar todavía.</strong>
+        <ul style="margin:6px 0 0 18px;padding:0;">
+          ${motivos.map(m=>`<li>${escHtml(m)}</li>`).join('')}
+        </ul>`;
+    }
+  }
+  const btnPub = document.getElementById('btnPublicarNetlify');
+  if(btnPub) btnPub.disabled = !canPublish;
+  const inpSubdominio = document.getElementById('fNetlifySubdominio');
+  if(inpSubdominio) inpSubdominio.disabled = !canPublish;
+
+  // --- Subdominio sugerido: si aún no fue publicado, recalcular al vuelo
+  // (así el usuario ve el nombre correcto apenas se completa el propId del CRM
+  // sin tener que renderizar). Solo actualiza si el input está vacío o si
+  // todavía muestra el sugerido viejo — no pisa lo que el usuario tipeó a mano.
+  if(inpSubdominio && !f.netlifyPublicado){
+    const sugerido = netlifySubdominioSugerido(f);
+    const previa = f.netlifySubdominio || '';
+    // Actualizar solo si el input actual == sugerido viejo (o vacío)
+    const previaSugerida = _subdominioSugeridoConId(f, previa) === previa && previa !== '';
+    if(!inpSubdominio.value || previaSugerida || inpSubdominio.value === previa){
+      if(document.activeElement !== inpSubdominio){  // no pisar mientras tipea
+        inpSubdominio.value = sugerido;
+        const prev = document.getElementById('netlifyUrlPreview');
+        if(prev) prev.textContent = sugerido || '(nombre-vacío)';
+      }
+    }
+  }
+}
+
+// Helper interno: chequea si un subdominio dado se parece al sugerido para
+// una ficha (útil para decidir si podemos sobrescribirlo con uno nuevo o si
+// el usuario lo editó a mano).
+function _subdominioSugeridoConId(f, subdominio){
+  // Simplificación: siempre devolvemos el sugerido actual. Si difiere del
+  // parámetro es porque el usuario lo cambió. Se usa arriba para no pisar.
+  return netlifySubdominioSugerido(f);
 }
 
 /**
@@ -2399,27 +2493,92 @@ function fichaToCrmPayload(f){
 }
 
 /**
- * Envía la propiedad al CRM. Actualiza f.crmEnviado, f.crmPropId, persist.
+ * Envía la propiedad al CRM.
+ *  - Si f.crmEnviado + f.crmPropId → llama actualizarPropiedad (misma fila)
+ *  - Si no → llama crearPropiedad (fila nueva)
+ * Si el CRM responde error "no se encontró" al actualizar (ej: la fila fue
+ * borrada manualmente), muestra modal preguntando si crear una nueva.
+ * Actualiza state + persist en cada caso.
  */
 async function enviarAlCRM(f){
   const faltan = camposFaltantesParaCRM(f);
   if(faltan.length){
     throw new Error('Faltan: ' + faltan.join(', '));
   }
+  const esUpdate = !!(f.crmEnviado && f.crmPropId);
   const payload = fichaToCrmPayload(f);
-  const resp = await crmFetch('crearPropiedad', payload);
+  if(esUpdate) payload.propId = f.crmPropId;
+
+  let resp;
+  try{
+    resp = await crmFetch(esUpdate ? 'actualizarPropiedad' : 'crearPropiedad', payload);
+  }catch(e){
+    // Si es update y el error indica "no se encontró", preguntar si crear nueva
+    const msg = String(e.message || e).toLowerCase();
+    if(esUpdate && /no se encontr/i.test(msg)){
+      return _preguntarCrearNueva(f);
+    }
+    throw e;
+  }
+
+  if(esUpdate){
+    // Update exitoso — la Prop_ID no cambia, solo timestamp
+    f.crmActualizadoAt = Date.now();
+    f.crmError = '';
+    f.updatedAt = Date.now();
+    persist();
+    return resp;
+  }
+
+  // Create exitoso
   if(!resp.propId){
     throw new Error('El CRM no devolvió Prop_ID. Respuesta: '+ JSON.stringify(resp).slice(0,200));
   }
   f.crmEnviado = true;
   f.crmPropId = resp.propId;
   f.crmEnviadoAt = Date.now();
+  f.crmActualizadoAt = 0;
   f.crmError = '';
   // Invalidar cache de propietarios por si acabamos de crear uno nuevo
   invalidarCachePropietarios();
   f.updatedAt = Date.now();
   persist();
   return resp;
+}
+
+/**
+ * Modal: "No se encontró IA-XXXX. ¿Crear una propiedad nueva?"
+ * Si Sí → resetea crmPropId + crmEnviado y re-llama enviarAlCRM (que ahora hace create).
+ * Si No → lanza error para que el caller lo muestre.
+ */
+function _preguntarCrearNueva(f){
+  return new Promise((resolve, reject)=>{
+    const propIdViejo = f.crmPropId || '(desconocido)';
+    showModal(
+      `No se encontró ${propIdViejo} en el CRM (¿alguien la borró?). ¿Querés crear una propiedad NUEVA con estos datos? (Se generará otro Prop_ID)`,
+      async ()=>{
+        // Sí → resetear estado CRM y re-intentar como create
+        f.crmEnviado = false;
+        f.crmPropId = '';
+        f.crmActualizadoAt = 0;
+        f.crmError = '';
+        try{
+          const resp = await enviarAlCRM(f);
+          resolve(resp);
+        }catch(e){ reject(e); }
+      },
+      {} // onlyOk=false → aparece Cancelar
+    );
+    // Nota: si el usuario aprieta Cancelar, showModal cierra sin llamar onOk.
+    // Dejamos la promesa colgando; el finally del caller resetea el spinner.
+    // Para no dejar el botón deshabilitado eternamente, resolvemos "vacío"
+    // después de 100ms si no se resolvió aún — el patrón de showModal no
+    // expone onCancel, así que asumimos: si no se resolvió en el modal, el
+    // usuario canceló y arrojamos un error informativo.
+    setTimeout(()=>{
+      reject(new Error('Cancelado por el usuario. La propiedad NO fue creada. Rearmá el propId manualmente si querés reenviar.'));
+    }, 60000);  // timeout largo para que el usuario tenga tiempo de decidir
+  });
 }
 
 /**
