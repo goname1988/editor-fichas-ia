@@ -2606,8 +2606,18 @@ function bytesToBase64(bytes){
 }
 
 /**
- * Publica la ficha en Netlify. Actualiza f.netlifyUrl, persist, y actualiza
- * el link en el CRM si la propiedad ya fue enviada.
+ * Publica la ficha en Netlify usando el protocolo file digests. Extrae cada
+ * foto base64 embebida como archivo aparte y las sube UNA por UNA a la
+ * Netlify Function — cada request queda <1MB, nunca excede el límite de 6MB
+ * que tienen las Functions synchronous.
+ *
+ * Pasos:
+ *   1) Generar HTML + extraer fotos base64 → /fotos/foto-N.jpg externas
+ *   2) SHA1 hex de cada archivo (index.html + fotos)
+ *   3) INIT: manifest → Function → deployId + lista de sha1 requeridos
+ *   4) UPLOAD: cada archivo required por separado (loop)
+ *   5) CHECK: polea estado hasta "ready" (max 60s)
+ *   6) Update f.netlifyUrl + persist + actualizar link en CRM
  */
 async function publicarEnNetlify(f, subdominio){
   const motivos = motivosNoPublicarNetlify(f);
@@ -2618,19 +2628,117 @@ async function publicarEnNetlify(f, subdominio){
   if(!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(name)){
     throw new Error('Nombre inválido. Solo minúsculas, números y guiones, entre 3 y 63 caracteres.');
   }
-  const html = generarFichaHTML(f);
+
+  // 1. Generar HTML de la ficha + extraer fotos base64 como archivos separados
+  const htmlOriginal = generarFichaHTML(f);
+  const { html, fotos } = _extraerFotosBase64ParaDeploy(htmlOriginal);
   const htmlBytes = new TextEncoder().encode(html);
-  const zipBytes = buildZipSingleFile('index.html', htmlBytes);
-  const zipBase64 = bytesToBase64(zipBytes);
+
+  const archivos = [{ path: 'index.html', bytes: htmlBytes }].concat(fotos);
+
+  // 2. Calcular SHA1 hex de cada archivo → manifest para Netlify
+  const manifest = {};
+  for(const a of archivos){
+    manifest['/' + a.path] = await _sha1Hex(a.bytes);
+  }
+
+  // 3. INIT — pedir a la Function que cree/reuse el site e inicie deploy
+  let initResp;
+  try{
+    initResp = await _netlifyFn({ action: 'init', name, files: manifest });
+  }catch(e){
+    throw new Error('No se pudo iniciar el deploy: ' + e.message);
+  }
+  const { deployId, siteUrl, required } = initResp;
+
+  // 4. UPLOAD — subir cada archivo requerido por separado
+  const shaToArchivo = {};
+  for(const a of archivos){
+    shaToArchivo[manifest['/' + a.path]] = a;
+  }
+  const requiredList = Array.isArray(required) ? required : [];
+  for(let i = 0; i < requiredList.length; i++){
+    const sha = requiredList[i];
+    const arch = shaToArchivo[sha];
+    if(!arch){
+      throw new Error('Netlify pidió un SHA que no está en el manifest: ' + sha);
+    }
+    const uploadUrl = NETLIFY_DEPLOY_FN
+      + '?action=upload&deployId=' + encodeURIComponent(deployId)
+      + '&path=' + encodeURIComponent('/' + arch.path);
+    let up;
+    try{
+      up = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: arch.bytes
+      });
+    }catch(e){
+      throw new Error('Sin conexión al subir ' + arch.path + '. Reintentá.');
+    }
+    if(!up.ok){
+      let msg = 'status ' + up.status;
+      try{ const j = await up.json(); if(j.error) msg = j.error; }catch(e){}
+      throw new Error('Falló subir ' + arch.path + ': ' + msg);
+    }
+  }
+
+  // 5. CHECK — polear estado del deploy hasta "ready" (max 60 chequeos × 1s = 60s)
+  let state = initResp.state || '';
+  let checkUrl = siteUrl;
+  for(let attempt = 0; attempt < 60 && state !== 'ready' && state !== 'error'; attempt++){
+    await new Promise(r => setTimeout(r, 1000));
+    let check;
+    try{
+      check = await _netlifyFn({ action: 'check', deployId });
+    }catch(e){
+      // Errores transitorios de red no matan el deploy — sigue polling
+      continue;
+    }
+    state = check.state;
+    if(check.url) checkUrl = check.url;
+    if(state === 'error'){
+      throw new Error('Deploy falló en Netlify: ' + (check.errorMessage || 'sin detalle'));
+    }
+  }
+  // Aunque no se llegue a "ready", si todos los uploads salieron OK el deploy
+  // termina solo en segundos más — no bloqueamos al usuario indefinidamente.
+
+  // 6. Actualizar state local
+  f.netlifyPublicado = true;
+  f.netlifyUrl = siteUrl;
+  f.netlifySubdominio = name;
+  f.netlifyPublicadoAt = Date.now();
+  f.netlifyError = '';
+  f.updatedAt = Date.now();
+  persist();
+
+  // 7. Actualizar link en CRM (best-effort — si falla no bloquea)
+  if(f.crmPropId){
+    try{
+      await crmFetch('actualizarLinkPropiedad', { propId: f.crmPropId, link: siteUrl });
+    }catch(e){
+      f.crmError = 'Se publicó en Netlify pero no se pudo actualizar el link en el CRM: '+ e.message;
+      persist();
+    }
+  }
+  return { url: siteUrl, deployId, state, subidos: requiredList.length };
+}
+
+/**
+ * Helper: POST JSON a la Netlify Function (init o check). Parsea respuesta
+ * o lanza Error con mensaje útil.
+ */
+async function _netlifyFn(payload){
   let res;
   try{
     res = await fetch(NETLIFY_DEPLOY_FN, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, zipBase64 })
+      body: JSON.stringify(payload)
     });
   }catch(e){
-    throw new Error('Sin conexión con la función de deploy. Verificá internet.');
+    throw new Error('Sin conexión con la Netlify Function. Verificá internet.');
   }
   const text = await res.text();
   let json;
@@ -2639,24 +2747,52 @@ async function publicarEnNetlify(f, subdominio){
   if(!res.ok){
     throw new Error(json.error || ('Error de Netlify (status '+res.status+')'));
   }
-  f.netlifyPublicado = true;
-  f.netlifyUrl = json.url;
-  f.netlifySubdominio = name;
-  f.netlifyPublicadoAt = Date.now();
-  f.netlifyError = '';
-  f.updatedAt = Date.now();
-  persist();
-  // Actualizar el link en el CRM (best-effort; si falla no bloquea la publicación)
-  if(f.crmPropId){
-    try{
-      await crmFetch('actualizarLinkPropiedad', { propId: f.crmPropId, link: json.url });
-    }catch(e){
-      // guardar el error pero no re-throwar — la publicación en Netlify sí salió
-      f.crmError = 'Se publicó en Netlify pero no se pudo actualizar el link en el CRM: '+ e.message;
-      persist();
-    }
-  }
   return json;
+}
+
+/**
+ * Recorre el HTML de la ficha y extrae cada `data:image/...` base64 embebido
+ * como archivo separado. Reemplaza cada uno por `./fotos/foto-N.ext` en el
+ * HTML. Deja las URLs externas (http/https) intactas — no las descarga.
+ *
+ * Devuelve: { html: string, fotos: [{path, bytes}] }
+ *
+ * El path siempre queda como `fotos/foto-N.ext` (sin barra inicial). Cuando
+ * se arma el manifest se le antepone "/" para Netlify.
+ */
+function _extraerFotosBase64ParaDeploy(html){
+  const fotos = [];
+  let idx = 0;
+  const re = /data:(image\/[a-z0-9+.\-]+);base64,([A-Za-z0-9+/=]+)/gi;
+  const nuevoHtml = html.replace(re, (_match, mime, b64) => {
+    const extRaw = mime.split('/')[1] || 'jpg';
+    const ext = extRaw.replace('+xml','').replace('svg','svg').replace('jpeg','jpg');
+    let bin;
+    try{ bin = atob(b64); }
+    catch(e){ return _match; }  // si el base64 está corrupto, dejarlo como estaba
+    const bytes = new Uint8Array(bin.length);
+    for(let i=0; i<bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const path = 'fotos/foto-' + idx + '.' + ext;
+    fotos.push({ path, bytes });
+    idx++;
+    return './' + path;
+  });
+  return { html: nuevoHtml, fotos };
+}
+
+/**
+ * SHA-1 hex string de un Uint8Array. Usa Web Crypto (nativo en todos los
+ * navegadores modernos, incluye Chrome desde 2013). Netlify espera sha1 hex
+ * de 40 caracteres.
+ */
+async function _sha1Hex(bytes){
+  const hash = await crypto.subtle.digest('SHA-1', bytes);
+  const arr = new Uint8Array(hash);
+  let hex = '';
+  for(let i=0; i<arr.length; i++){
+    hex += arr[i].toString(16).padStart(2, '0');
+  }
+  return hex;
 }
 
 /* ======================= BACKUP EXPORT / IMPORT ======================= */
